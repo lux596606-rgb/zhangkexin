@@ -17,6 +17,11 @@ function pinchLandmarks() {
   points[0] = { x: 0.5, y: 0.92 }
   points[4] = { x: 0.47, y: 0.26 }
   points[8] = { x: 0.49, y: 0.25 }
+  // 捏合要求食指真的"伸直"：MCP/PIP 必须偏离腕-指尖连线。
+  // 否则 5-6-8 三点共线会让 PIP 夹角退化成 NaN，伸直判定不成立。
+  points[5] = { x: 0.42, y: 0.67 }
+  points[6] = { x: 0.43, y: 0.47 }
+  points[7] = { x: 0.45, y: 0.36 }
 
   for (const [mcp, pip, tip, x] of [
     [9, 10, 12, 0.5],

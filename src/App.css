@@ -530,6 +530,119 @@ kbd {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
 }
 
+/* 手势反馈：贴在舞台左上角，克制、不抢戏，也不挡中央的粒子形状。
+   pointer-events: none 保证银河态在它下方的拖拽/滚轮完全不受影响。 */
+.gesture-feedback {
+  position: absolute;
+  top: 26px;
+  left: 26px;
+  z-index: 3;
+  width: min(252px, 46%);
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 234, 226, 0.12);
+  border-radius: 4px;
+  background: rgba(10, 12, 24, 0.52);
+  font-family: 'DM Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+  pointer-events: none;
+  transition: border-color 260ms ease, background 260ms ease;
+}
+
+.gesture-feedback__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: rgba(250, 237, 233, 0.74);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.gesture-feedback__dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #ffad98;
+  box-shadow: 0 0 12px rgba(255, 173, 152, 0.85);
+  transition: background 220ms ease, box-shadow 220ms ease;
+}
+
+.gesture-feedback__detail {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 8px 0 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.gesture-feedback__detail[hidden] { display: none; }
+
+.gesture-feedback__mode { color: #ffd9cd; font-size: 0.76rem; letter-spacing: 0.03em; }
+
+.gesture-feedback__mode b {
+  display: inline-grid;
+  width: 17px;
+  height: 17px;
+  margin-right: 6px;
+  place-items: center;
+  border: 1px solid rgba(255, 176, 158, 0.45);
+  border-radius: 50%;
+  color: #ffb19f;
+  font-size: 0.56rem;
+  font-weight: 400;
+  vertical-align: 1px;
+}
+
+/* 原始置信度：给「系统确实看到了我的手」一个可核对的数字，低于阈值时按文字说明。 */
+.gesture-feedback__confidence { color: rgba(253, 232, 224, 0.36); font-size: 0.55rem; }
+.gesture-feedback__confidence[hidden] { display: none; }
+
+.gesture-feedback__hint {
+  margin: 7px 0 0;
+  color: rgba(250, 237, 233, 0.55);
+  font-size: 0.58rem;
+  letter-spacing: 0.02em;
+  line-height: 1.55;
+}
+
+/* 保持窗口进度条：宽 100% 的一根细线，宽度对应 HOLD_MS。 */
+.gesture-feedback__bar {
+  height: 2px;
+  margin-top: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 234, 226, 0.14);
+}
+
+.gesture-feedback__bar[hidden] { display: none; }
+
+.gesture-feedback__bar-fill {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #ff9f88, #ffd8a8);
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+/* 七种状态的语义色，沿用顶部状态灯同一套配色。 */
+.gesture-feedback--loading { border-color: rgba(255, 209, 139, 0.28); }
+.gesture-feedback--loading .gesture-feedback__dot { background: #ffd18b; box-shadow: 0 0 12px rgba(255, 209, 139, 0.8); }
+.gesture-feedback--ready .gesture-feedback__dot { background: #9bd6a4; box-shadow: 0 0 12px rgba(155, 214, 164, 0.8); }
+.gesture-feedback--holding { border-color: rgba(255, 209, 139, 0.34); background: rgba(12, 14, 27, 0.58); }
+.gesture-feedback--holding .gesture-feedback__dot { background: #ffd18b; box-shadow: 0 0 14px rgba(255, 209, 139, 0.9); animation: gesturePulse 1.1s ease-in-out infinite; }
+.gesture-feedback--recognized { border-color: rgba(255, 176, 158, 0.42); }
+.gesture-feedback--recognized .gesture-feedback__dot { background: #ff8974; box-shadow: 0 0 16px rgba(255, 137, 116, 0.95); }
+.gesture-feedback--unrecognized .gesture-feedback__dot { background: #c7ad83; box-shadow: 0 0 12px rgba(199, 173, 131, 0.55); }
+.gesture-feedback--unavailable { border-color: rgba(233, 132, 134, 0.3); }
+.gesture-feedback--unavailable .gesture-feedback__dot { background: #e98486; box-shadow: 0 0 12px rgba(233, 132, 134, 0.68); }
+
+@keyframes gesturePulse {
+  from { opacity: 0.45; transform: scale(0.82); }
+  to { opacity: 1; transform: scale(1.12); }
+}
+
 .camera-preview video { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; transform: scaleX(-1); }
 .camera-preview span { display: flex; align-items: center; gap: 5px; padding: 6px 8px; color: rgba(255, 235, 226, 0.65); font-family: 'DM Mono', ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.59rem; }
 
@@ -607,6 +720,8 @@ kbd {
   .keyboard-guide { margin-top: 31px; }
   .stage { aspect-ratio: 0.96; }
   .camera-preview { right: 16px; bottom: 28px; width: 115px; }
+  .gesture-feedback { top: 18px; left: 18px; width: min(216px, 62%); padding: 8px 10px; }
+  .gesture-feedback__hint { font-size: 0.55rem; }
   .stage-caption { right: 16px; left: 16px; }
   .mode-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .mode-tab { min-height: 42px; padding-inline: 10px; font-size: 0.74rem; }

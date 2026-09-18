@@ -14,6 +14,9 @@ import {
 } from 'lucide-react'
 import { ParticleCanvas, type QualitySnapshot } from './components/ParticleCanvas'
 import { GestureController, type GestureMode, type GestureStatus } from './components/GestureController'
+import { GestureFeedback } from './components/GestureFeedback'
+import { createGestureFeedbackState } from './components/gestureFeedbackState'
+import { createModeSwitchGuard } from './components/modeSelection'
 import { useBirthdayMusic } from './components/BirthdayMusic'
 import './App.css'
 
@@ -96,6 +99,11 @@ function App() {
   const [quality, setQuality] = useState<QualitySnapshot>({ tier: 'high', fps: 0 })
   const videoRef = useRef<HTMLVideoElement>(null)
   const dragPointRef = useRef<{ x: number; y: number } | null>(null)
+  // 手势反馈心跳：每帧就地更新，不走 state（否则整页每秒重渲染几十次）。
+  const [gestureFeedback] = useState(() => createGestureFeedbackState())
+  const modeSwitchGuardRef = useRef(createModeSwitchGuard())
+  /** 供手势回调同步读取当前样式：手势回调是常驻的，不能依赖闭包里的 currentMode。 */
+  const currentModeRef = useRef<ModeId>('galaxy')
   const {
     available: musicAvailable,
     muted: musicMuted,
@@ -109,6 +117,10 @@ function App() {
     () => modes.find((mode) => mode.id === currentMode) ?? modes[0],
     [currentMode],
   )
+
+  useEffect(() => {
+    currentModeRef.current = currentMode
+  }, [currentMode])
 
   const handleStart = useCallback(async () => {
     if (cameraStatus === 'requesting') return
@@ -152,6 +164,12 @@ function App() {
   }, [])
 
   const handleGesture = useCallback((mode: GestureMode) => {
+    // 需求 8：识别不到手势时不会走到这里，当前样式原样保留。
+    // 需求 3.4.3：同一个手势重复触发同一目标仍然允许，重复设置同一目标不会产生过渡抖动。
+    if (mode === currentModeRef.current) return
+    // 只给「换样式」加一道很短的闸门（300ms），远小于做一次手势所需的 700ms 保持时间，
+    // 因此正常切换不受影响，只挡住模型在边界上逐帧摇摆造成的过渡动画反复重启。
+    if (!modeSwitchGuardRef.current.allow(performance.now())) return
     selectMode(mode)
   }, [selectMode])
 
@@ -289,6 +307,7 @@ function App() {
         enabled={cameraStatus === 'enabled' && Boolean(cameraStream)}
         onGesture={handleGesture}
         onStatus={setGestureStatus}
+        feedback={gestureFeedback}
       />
 
       {!started ? (
@@ -438,10 +457,13 @@ function App() {
               <div className="stage-halo" aria-hidden="true" />
               <ParticleCanvas mode={currentMode} paused={paused} flow={galaxyFlow} onQualityChange={handleQualityChange} />
               {cameraStatus === 'enabled' && cameraStream && (
-                <div className="camera-preview">
-                  <video ref={videoRef} autoPlay playsInline muted />
-                  <span><Camera size={12} aria-hidden="true" /> 本地预览</span>
-                </div>
+                <>
+                  <GestureFeedback state={gestureFeedback} />
+                  <div className="camera-preview">
+                    <video ref={videoRef} autoPlay playsInline muted />
+                    <span><Camera size={12} aria-hidden="true" /> 本地预览</span>
+                  </div>
+                </>
               )}
               <div className="stage-caption">
                 <span>{activeMode.label}</span>
