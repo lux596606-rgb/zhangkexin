@@ -34,8 +34,9 @@ export function clearFireworks(field: FireworkField): void {
 }
 
 /**
- * 发射一波烟花。文字包围盒上方的左右两角是"空白区"：
- * 爆发点固定在那里，发射点在文字下方，扩散方向再向外偏，整个过程不压在"生日快乐，张珂欣"上。
+ * 发射一波烟花。爆发点要落在文字包围盒"之外"的空白处：
+ * 收束画面的文字几乎占满画布宽度，若只按画布比例取点，爆发会直接炸在字上。
+ * 因此这里接收文字包围盒的宽高，把爆发点推到内容之外——上方留空或左右留空，两者取可用的那个。
  */
 export function spawnFireworkWave(
   field: FireworkField,
@@ -44,12 +45,18 @@ export function spawnFireworkWave(
   halfHeight: number,
   tier: QualityTier,
   particleBudget: number,
+  halfWidth = 0,
 ): void {
   const count = fireworkParticleCount(tier, particleBudget)
   const textTop = Math.max(height * 0.04, height / 2 - halfHeight)
   const textBottom = Math.min(height * 0.96, height / 2 + halfHeight)
-  const burstY = textTop * 0.72
-  const burstX = width * (Math.random() < 0.5 ? 0.13 + Math.random() * 0.14 : 0.73 + Math.random() * 0.14)
+  const margin = Math.max(18, Math.min(width, height) * 0.05)
+  const sideRoom = width / 2 - halfWidth - margin
+  // 文字左右还有余量就在两侧炸；否则退到文字上方，绝不压在字上。
+  const burstY = sideRoom > width * 0.08 ? Math.max(height * 0.08, textTop * 0.62) : Math.max(height * 0.08, textTop - height * 0.12)
+  const burstX = sideRoom > width * 0.08
+    ? (Math.random() < 0.5 ? margin + Math.random() * sideRoom : width - margin - Math.random() * sideRoom)
+    : width * (0.16 + Math.random() * 0.68)
   const emitY = Math.min(height * 0.94, Math.max(burstY + height * 0.25, textBottom + height * 0.04))
   const riseTime = 0.5 + Math.random() * 0.08
   const outward = burstX < width / 2 ? -1 : 1
@@ -74,6 +81,41 @@ export function spawnFireworkWave(
     })
   }
   field.flashes.push({ x: burstX, y: burstY, age: 0, life: 0.42, radius: Math.max(26, Math.min(width, height) * 0.06) })
+}
+
+/**
+ * 远景烟花：没有升空拖尾，直接在画布边缘附近绽开，亮度更低、半径更小，
+ * 作为收束场景的背景节奏，不会把中央的愿望文字打碎。
+ */
+export function spawnBackgroundFirework(
+  field: FireworkField,
+  width: number,
+  height: number,
+  tier: QualityTier,
+  particleBudget: number,
+): void {
+  const count = Math.max(30, Math.round(fireworkParticleCount(tier, particleBudget) * 0.72))
+  const edge = Math.random() < 0.5
+  const burstX = edge ? width * (0.08 + Math.random() * 0.22) : width * (0.7 + Math.random() * 0.22)
+  const burstY = height * (0.12 + Math.random() * 0.56)
+  const speedBase = tier === 'low' ? 46 : 58
+
+  for (let index = 0; index < count; index += 1) {
+    const angle = (Math.PI * 2 * index) / count + (Math.random() - 0.5) * 0.22
+    const speed = speedBase + Math.random() * 72
+    field.particles.push({
+      x: burstX + (Math.random() - 0.5) * 3,
+      y: burstY + (Math.random() - 0.5) * 3,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      age: 0,
+      fuse: 0,
+      life: 1.25 + Math.random() * 0.85,
+      size: 0.65 + Math.random() * 0.82,
+      color: FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)],
+    })
+  }
+  field.flashes.push({ x: burstX, y: burstY, age: 0, life: 0.46, radius: Math.max(18, Math.min(width, height) * 0.045) })
 }
 
 /** 拖尾阶段的重力只有很小一部分，爆发后才完全生效。 */

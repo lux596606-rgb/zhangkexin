@@ -28,8 +28,12 @@ export const QUALITY_TIER_SCALE: Record<QualityTier, { particles: number; resolu
  * 基准预算按面积算出来的量级偏疏，加成后 high 档落在 2000~2400 之间。
  */
 export const SHAPE_PARTICLE_SCALE = 1.5
-/** 粒子数量硬上限：加成之后仍然是硬约束，低档与自适应降档才有意义。 */
-export const MAX_PARTICLE_COUNT = 2400
+/**
+ * 粒子数量硬上限：加成之后仍然是硬约束，低档与自适应降档才有意义。
+ * 上限从 2400 提到 2800 是为了给收束样式留出余量：它的点径被压到最小，
+ * 需要更高的覆盖密度才不显稀；真正跑不动时自适应降档会在 3 秒内把档位压下去。
+ */
+export const MAX_PARTICLE_COUNT = 2800
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))

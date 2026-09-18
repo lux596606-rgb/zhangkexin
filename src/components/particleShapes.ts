@@ -19,6 +19,8 @@ export type ShapePoint = {
   shapeBand?: ShapeBand
   /** 光环粒子的慢速公转系数，保证形态不是死的。 */
   bandFactor?: number
+  /** 文字采样用的网格步长：渲染时据此给点加一点抖动，避免字形带上一层规整的点阵纹理。 */
+  sampleStride?: number
 }
 
 /** shapePoints、每颗粒子的目标缓冲与寻址顺序封装在一起，避免各处各自维护索引。 */
@@ -30,6 +32,10 @@ export type ShapeTargets = {
   centerY: number
   /** 文字包围盒半高，用于把烟花发射点放在文字上方而不是压在字上。 */
   halfHeight: number
+  /** 文字包围盒半宽：收束画面文字很宽，烟花必须据此避开左右两侧的字。 */
+  halfWidth: number
+  /** 文字样式的原文（逐行）。淡描层要用它把同一批字再描一遍淡边。 */
+  lines: string[]
 }
 
 const galaxyPalette: RGB[] = [
@@ -44,35 +50,113 @@ export const closingPalette: RGB = [255, 205, 156]
 const goldHighlight: RGB = [255, 239, 197]
 
 export const BIRTHDAY_LINES = ['生日', '快乐']
-export const CLOSING_LINES = ['生日快乐，', '张珂欣']
+/** 收束样式换成许愿语义，避免与动作 2 的祝福文字重复。 */
+export const CLOSING_LINES = ['愿望', '成真']
 
-/** 采样离屏画布上的文字像素。 */
-export function sampleText(lines: string[], width: number, height: number, color: RGB): ShapePoint[] {
+/** 每行最多占画布宽度的比例：超出时按比例缩小字号，宁可变小也不出血。 */
+const TEXT_LINE_WIDTH_RATIO = 0.86
+/**
+ * 收束样式的排版参数。
+ * 由"参数试验台"逐格对照定下（见 tmp-artifacts/closing-sweep.png、closing-final.png）：
+ * 560×418 的画布上落在 106px 左右，四个字清晰可读；
+ * 再放大到 120~132px 时点径相对笔画偏粗，笔画会糊成一块、反而认不出字。
+ */
+const TEXT_FONT_WIDTH_RATIO = 0.19
+const TEXT_FONT_HEIGHT_RATIO = 0.13
+/**
+ * 采样步长与字号的比值，直接决定"笔画上有几排采样点"。
+ * CJK 笔画宽度约为字号的 0.11，比值 0.024 时一竖有 4~5 排点，字缘才不会被抽成断续的虚线。
+ */
+const TEXT_STRIDE_PER_EM = 0.024
+const TEXT_STRIDE_MIN = 2
+const TEXT_STRIDE_MAX = 4
+const TEXT_FONT_SIZE_MIN = 44
+const TEXT_FONT_SIZE_MAX = 150
+const TEXT_LINE_HEIGHT_RATIO = 1.12
+
+/** 文字排版参数；不传则用上面这套收束样式的默认值。 */
+export type TextLayoutOptions = {
+  fontWidthRatio?: number
+  fontHeightRatio?: number
+  stridePerEm?: number
+  lineWidthRatio?: number
+}
+
+/**
+ * 动作 2「生日快乐」沿用的原始参数。
+ * 这一档已经逐字肉眼确认可读、属于已验收的观感，因此在这里显式钉住，
+ * 不随收束样式的调参一起漂移——改一个样式不应该顺手改掉另一个样式。
+ */
+export const BIRTHDAY_TEXT_LAYOUT: TextLayoutOptions = {
+  fontWidthRatio: 0.17,
+  fontHeightRatio: 0.235,
+  // 原实现为 round(min(w,h)/190)：560×418 上等于 2，这里按同量级折算成字号比例。
+  stridePerEm: 0.0185,
+  lineWidthRatio: 0.86,
+}
+
+/**
+ * 采样离屏画布上的文字像素。
+ *
+ * 字号先按画布尺寸给出基础值，再用实测文本宽度收一次，保证长句不会顶出画布。
+ * 字号是这套画面清晰度的第一决定因素：字越大 → 步长越大但"每字采样点数平方增长"，
+ * 同样数量的粒子能覆盖更细的笔画，点阵里不会出现肉眼可见的方格子；
+ * 反过来，采样点少于粒子数时粒子只能反复复用同一批点，笔画就退化成"串珠"而不是"实线"。
+ */
+export function sampleText(
+  lines: string[],
+  width: number,
+  height: number,
+  color: RGB,
+  layout: TextLayoutOptions = {},
+): ShapePoint[] {
+  const fontWidthRatio = layout.fontWidthRatio ?? TEXT_FONT_WIDTH_RATIO
+  const fontHeightRatio = layout.fontHeightRatio ?? TEXT_FONT_HEIGHT_RATIO
+  const stridePerEm = layout.stridePerEm ?? TEXT_STRIDE_PER_EM
+  const lineWidthRatio = layout.lineWidthRatio ?? TEXT_LINE_WIDTH_RATIO
+
   const surface = document.createElement('canvas')
   surface.width = Math.max(1, Math.floor(width))
   surface.height = Math.max(1, Math.floor(height))
   const context = surface.getContext('2d')
   if (!context) return []
 
-  const fontSize = clamp(Math.min(width * 0.17, height * 0.235), 44, 118)
-  const lineHeight = fontSize * 1.08
+  // 字体栈必须与 index.css 的 :root 逐项保持一致（canvas 读不到 CSS 变量，只能写字面量）：
+  // 拉丁用自托管 Manrope、中文用系统字体，粒子字形才会与页面文字同源。
+  const fontStack = '"Manrope", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", "Segoe UI", sans-serif'
+  const fontOf = (size: number) => `600 ${size}px ${fontStack}`
+
+  let fontSize = clamp(
+    Math.max(width * fontWidthRatio, height * fontHeightRatio),
+    TEXT_FONT_SIZE_MIN,
+    TEXT_FONT_SIZE_MAX,
+  )
+  const maxLineWidth = width * lineWidthRatio
+  if (lines.length > 0) {
+    context.font = fontOf(fontSize)
+    let widest = 0
+    for (const line of lines) widest = Math.max(widest, context.measureText(line).width)
+    if (widest > maxLineWidth && widest > 0) {
+      fontSize = Math.max(TEXT_FONT_SIZE_MIN, fontSize * (maxLineWidth / widest))
+    }
+  }
+
+  const lineHeight = fontSize * TEXT_LINE_HEIGHT_RATIO
   context.clearRect(0, 0, surface.width, surface.height)
   context.fillStyle = '#ffffff'
   context.textAlign = 'center'
   context.textBaseline = 'middle'
-  // 字体栈必须与 index.css 的 :root 逐项保持一致（canvas 读不到 CSS 变量，只能写字面量）：
-  // 拉丁用自托管 Manrope、中文用系统字体，粒子字形才会与页面文字同源。
-  context.font = `600 ${fontSize}px "Manrope", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", "Segoe UI", sans-serif`
+  context.font = fontOf(fontSize)
   const start = height / 2 - ((lines.length - 1) * lineHeight) / 2
   lines.forEach((line, index) => context.fillText(line, width / 2, start + index * lineHeight))
 
   const pixels = context.getImageData(0, 0, surface.width, surface.height).data
-  const stride = Math.max(2, Math.round(Math.min(width, height) / 190))
+  const stride = clamp(Math.round(fontSize * stridePerEm), TEXT_STRIDE_MIN, TEXT_STRIDE_MAX)
   const points: ShapePoint[] = []
   for (let y = 0; y < surface.height; y += stride) {
     for (let x = 0; x < surface.width; x += stride) {
       if (pixels[(y * surface.width + x) * 4 + 3] > 90) {
-        points.push({ x, y, color, shapeBand: 'text' })
+        points.push({ x, y, color, shapeBand: 'text', sampleStride: stride })
       }
     }
   }
@@ -538,7 +622,14 @@ export function buildShapePoints(
   height: number,
   pigImage: HTMLImageElement | null,
 ): ShapePoint[] {
-  if (mode === 'birthday') return sampleText(BIRTHDAY_LINES, width, height, birthdayPalette)
+  if (mode === 'birthday') return sampleText(BIRTHDAY_LINES, width, height, birthdayPalette, BIRTHDAY_TEXT_LAYOUT)
   if (mode === 'closing') return makeClosingPoints(width, height)
   return pigImage ? samplePig(pigImage, width, height) : fallbackPig(width, height)
+}
+
+/** 文字样式的原文行：淡描层要照着同样的字再描一遍，所以必须是同一个来源。 */
+export function textLinesFor(mode: Exclude<ParticleMode, 'galaxy'>): string[] {
+  if (mode === 'birthday') return BIRTHDAY_LINES
+  if (mode === 'closing') return CLOSING_LINES
+  return []
 }

@@ -12,7 +12,7 @@ const modeLabels: Record<GestureMode, string> = {
   galaxy: '银河态',
   birthday: '生日快乐',
   pig: '猪头卡通',
-  closing: '祝福收束',
+  closing: '许愿收束',
 }
 
 /** 与键盘 1 / 2 / 3 / 4 一致的手势入口编号，让使用者一眼对上提示。 */

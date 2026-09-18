@@ -65,6 +65,14 @@ export class ParticleTransition {
     return clamp(this.elapsed / this.total, 0, 1)
   }
 
+  /**
+   * 收拢已经走了多少（0~1，从扩散结束开始计时）。
+   * 用于"成形之后才加动势"的编排：0 表示还在扩散、1 表示已经收拢完成。
+   */
+  get gatherProgress(): number {
+    return clamp((this.elapsed - this.dispersion) / this.gather, 0, 1)
+  }
+
   /** 扩散强度：0→1→0，峰值在扩散阶段中点。 */
   get dispersionBlend(): number {
     if (this.elapsed >= this.dispersion) return 0

@@ -3,6 +3,7 @@ import {
   Camera,
   CameraOff,
   Check,
+  Heart,
   Keyboard,
   Pause,
   Play,
@@ -17,6 +18,8 @@ import { GestureController, type GestureMode, type GestureStatus } from './compo
 import { GestureFeedback } from './components/GestureFeedback'
 import { GestureGuide } from './components/GestureGuide'
 import { CameraFallbackNotice } from './components/CameraFallbackNotice'
+import { SketchDecor } from './components/SketchDecor'
+import { SKETCH_SIDES } from './components/sketchMotifs'
 import { cameraFallbackFor, type CameraStatus } from './components/cameraFallback'
 import { createGestureFeedbackState } from './components/gestureFeedbackState'
 import { createModeSwitchGuard } from './components/modeSelection'
@@ -35,6 +38,8 @@ type Mode = {
   message: string
   /** 画面这一刻的样子：四段同一层级、同一语气，只说看见什么，不解释怎么实现。 */
   detail: string
+  leftNotes: string[]
+  mood: string
 }
 
 const modes: Mode[] = [
@@ -45,7 +50,9 @@ const modes: Mode[] = [
     kicker: '01 / STARFIELD',
     title: '让星光先替我说声生日快乐',
     message: '愿新的一岁，日子像银河一样明亮自在。',
-    detail: '星尘正缓缓流动',
+    detail: '星尘正缓缓流动 · 拖动或滚轮可以改变流向',
+    leftNotes: ['先把今晚交给星光', '把烦恼放远一点', '只收集轻松和好心情'],
+    mood: '慢慢靠近',
   },
   {
     id: 'birthday',
@@ -55,6 +62,8 @@ const modes: Mode[] = [
     title: '生日快乐，张珂欣',
     message: '愿你每天开心，学习顺利，也越来越聪明。',
     detail: '粒子聚成了祝福文字，正轻轻呼吸',
+    leftNotes: ['这一束光写给你', '每一天都值得被庆祝', '今天的主角，请收下掌声'],
+    mood: '把祝福说清楚',
   },
   {
     id: 'pig',
@@ -64,15 +73,19 @@ const modes: Mode[] = [
     title: '一颗可爱的粉色星座',
     message: '把今天的好心情，收进这颗软乎乎的星星里。',
     detail: '粒子拼出了猪头轮廓，腮红也亮着',
+    leftNotes: ['可爱是今天的通行证', '笑一下，运气会靠近', '这颗星星替你保管快乐'],
+    mood: '可爱正在发生',
   },
   {
     id: 'closing',
     key: '4',
-    label: '祝福收束',
-    kicker: '04 / WARM FINALE',
-    title: '生日快乐，张珂欣',
-    message: '愿你被温柔照亮，也一直保留自己的可爱。',
-    detail: '星光正慢慢聚拢',
+    label: '许愿收束',
+    kicker: '04 / WISH FINALE',
+    title: '愿望成真，张珂欣',
+    message: '闭上眼睛三秒，许下今天最想实现的小愿望。',
+    detail: '愿望光环已经亮起，烟花会从文字上方落下',
+    leftNotes: ['把愿望交给这一圈光', '不必急着长大', '愿你想要的，都有回音'],
+    mood: '许一个小愿望',
   },
 ]
 
@@ -115,6 +128,9 @@ function App() {
     () => modes.find((mode) => mode.id === currentMode) ?? modes[0],
     [currentMode],
   )
+
+  /** 这一样式的简笔画装饰：左右两侧分别是什么，由 SKETCH_SIDES 单点决定。 */
+  const sketchSides = SKETCH_SIDES[currentMode]
 
   useEffect(() => {
     currentModeRef.current = currentMode
@@ -409,11 +425,18 @@ function App() {
           </header>
 
           <div className="experience-grid">
-            <section className="scene-copy">
+            <section className="scene-copy" key={currentMode}>
               <p className="eyebrow">{activeMode.kicker}</p>
               <h1 id="experience-title">{activeMode.title}</h1>
               <p className="scene-message">{activeMode.message}</p>
               <p className="scene-detail">{activeMode.detail}</p>
+
+              <div className="scene-letter" aria-label="这一幕的小笺">
+                <div className="scene-letter-heading"><Heart size={14} aria-hidden="true" /> {activeMode.mood}</div>
+                <div className="scene-letter-lines">
+                  {activeMode.leftNotes.map((note) => <span key={note}>{note}</span>)}
+                </div>
+              </div>
 
               <div className="control-row">
                 <button
@@ -446,7 +469,7 @@ function App() {
                   <span><kbd>1</kbd> 银河</span>
                   <span><kbd>2</kbd> 生日</span>
                   <span><kbd>3</kbd> 猪头</span>
-                  <span><kbd>4</kbd> 收束</span>
+                  <span><kbd>4</kbd> 许愿</span>
                   <span><kbd>空格</kbd> 暂停</span>
                   <span><kbd>R</kbd> 重置</span>
                 </div>
@@ -467,6 +490,11 @@ function App() {
               >
                 <div className="stage-grid" aria-hidden="true" />
                 <div className="stage-halo" aria-hidden="true" />
+                <div className="stage-sweep" aria-hidden="true" />
+                {/* 简笔画装饰（蛋糕 / 19 岁数字蜡烛 / 爱心）：需求要求这些用简笔画，
+                    不写成粒子，所以单独一层 SVG，落在舞台两侧、不压中央的粒子主体。 */}
+                <SketchDecor side="left" motif={sketchSides.left} />
+                <SketchDecor side="right" motif={sketchSides.right} />
                 <ParticleCanvas mode={currentMode} paused={paused} flow={galaxyFlow} onQualityChange={handleQualityChange} />
                 {fallbackCopy && showFallback && (
                   <CameraFallbackNotice copy={fallbackCopy} onDismiss={dismissFallback} />

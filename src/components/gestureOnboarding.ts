@@ -16,7 +16,7 @@ export type GestureGuideItem = {
 }
 
 /**
- * 需求 3.2 固定的四条映射：张开手掌=银河态、拇食指捏合=生日快乐、握拳=猪头卡通、竖拇指=祝福收束。
+ * 需求 3.2 固定的四条映射：张开手掌=银河态、拇食指捏合=生日快乐、握拳=猪头卡通、竖拇指=许愿收束。
  * 这是落地页引导的唯一数据源：改这里就等于同时改了图示、文案和按键提示。
  * modeLabel 必须与体验页四个样式名逐字一致，全站不出现第二个叫法。
  */
@@ -24,7 +24,7 @@ export const GESTURE_GUIDE: readonly GestureGuideItem[] = [
   { id: 'openPalm', gesture: '张开手掌', mode: 'galaxy', key: '1', modeLabel: '银河态' },
   { id: 'pinch', gesture: '拇指食指捏合', mode: 'birthday', key: '2', modeLabel: '生日快乐' },
   { id: 'fist', gesture: '握拳', mode: 'pig', key: '3', modeLabel: '猪头卡通' },
-  { id: 'thumbUp', gesture: '竖起大拇指', mode: 'closing', key: '4', modeLabel: '祝福收束' },
+  { id: 'thumbUp', gesture: '竖起大拇指', mode: 'closing', key: '4', modeLabel: '许愿收束' },
 ]
 
 /** 保持时长直接由手势识别的 HOLD_MS 推导，说明文案不会和真实阈值各说各话。 */
