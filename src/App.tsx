@@ -15,21 +15,16 @@ import {
 import { ParticleCanvas, type QualitySnapshot } from './components/ParticleCanvas'
 import { GestureController, type GestureMode, type GestureStatus } from './components/GestureController'
 import { GestureFeedback } from './components/GestureFeedback'
+import { GestureGuide } from './components/GestureGuide'
+import { CameraFallbackNotice } from './components/CameraFallbackNotice'
+import { cameraFallbackFor, type CameraStatus } from './components/cameraFallback'
 import { createGestureFeedbackState } from './components/gestureFeedbackState'
 import { createModeSwitchGuard } from './components/modeSelection'
+import { MOTION_NOTE, formatQualityLabel, useReducedMotion } from './components/motionPreference'
 import { useBirthdayMusic } from './components/BirthdayMusic'
 import './App.css'
 
 type ModeId = 'galaxy' | 'birthday' | 'pig' | 'closing'
-type CameraStatus =
-  | 'idle'
-  | 'requesting'
-  | 'enabled'
-  | 'denied'
-  | 'unavailable'
-  | 'unsupported'
-  | 'error'
-  | 'closed'
 
 type Mode = {
   id: ModeId
@@ -97,6 +92,8 @@ function App() {
   const [gestureStatus, setGestureStatus] = useState<GestureStatus>('idle')
   const [galaxyFlow, setGalaxyFlow] = useState({ x: 0, y: 0 })
   const [quality, setQuality] = useState<QualitySnapshot>({ tier: 'high', fps: 0 })
+  /** 系统「减少动态效果」偏好：粒子画布内部按它降档，这里只用于把这条路径讲出来。 */
+  const reducedMotion = useReducedMotion()
   const videoRef = useRef<HTMLVideoElement>(null)
   const dragPointRef = useRef<{ x: number; y: number } | null>(null)
   // 手势反馈心跳：每帧就地更新，不走 state（否则整页每秒重渲染几十次）。
@@ -176,6 +173,15 @@ function App() {
   const handleQualityChange = useCallback((snapshot: QualitySnapshot) => {
     setQuality(snapshot)
   }, [])
+
+  // 需求 3.1 / 6 / 8：摄像头用不了时，除了状态行，还给出「现在怎么继续」。
+  // 状态机与文案映射保持原样，这里只在其上补一层可操作的去处。
+  // 收起记录按「状态」而不是布尔量保存：状态一变（例如先没授权、之后又主动关闭）
+  // 就会自然再给一次提示，不需要用 effect 去重置 state。
+  const [fallbackDismissedStatus, setFallbackDismissedStatus] = useState<CameraStatus | null>(null)
+  const fallbackCopy = cameraFallbackFor(cameraStatus)
+  const showFallback = fallbackCopy !== null && fallbackDismissedStatus !== cameraStatus
+  const dismissFallback = useCallback(() => setFallbackDismissedStatus(cameraStatus), [cameraStatus])
 
   const handleStageWheel = useCallback((event: ReactWheelEvent<HTMLElement>) => {
     if (currentMode !== 'galaxy') return
@@ -343,6 +349,7 @@ function App() {
               <span className="orbit-label orbit-label-bottom">SOFT LIGHT / 10.11</span>
             </div>
           </div>
+          <GestureGuide />
           <footer className="landing-footer">
             <span>一份轻轻放在夜空里的祝福</span>
             <span className="footer-rule" />
@@ -465,9 +472,18 @@ function App() {
                   </div>
                 </>
               )}
+              {fallbackCopy && showFallback && (
+                <CameraFallbackNotice copy={fallbackCopy} onDismiss={dismissFallback} />
+              )}
               <div className="stage-caption">
                 <span>{activeMode.label}</span>
-                <span className="stage-quality" data-tier={quality.tier}>{quality.tier.toUpperCase()} · {Math.round(quality.fps)} FPS</span>
+                <span
+                  className="stage-quality"
+                  data-tier={quality.tier}
+                  data-motion={reducedMotion ? 'reduced' : 'full'}
+                >
+                  {formatQualityLabel(quality.tier, quality.fps, reducedMotion)}
+                </span>
                 <span>{paused ? '已暂停' : 'LIVE'}</span>
               </div>
             </section>
@@ -493,6 +509,7 @@ function App() {
             <div className="music-note">
               {musicAvailable ? 'Happy Birthday · 星光旋律' : '当前浏览器不支持音乐'}
             </div>
+            <p className="motion-note">{MOTION_NOTE}</p>
           </nav>
         </main>
       )}

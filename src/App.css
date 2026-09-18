@@ -300,6 +300,82 @@
 
 .landing-footer span:last-child { margin-left: auto; }
 
+/* 落地页的四种手势说明（需求 3.2 / 8）：一行极简线稿 + 一行补充，
+   排在「开启星光」与隐私说明之后再出现，属于落地页的自然延伸，
+   既不可能挡住主按钮，也不打断原来的呼吸感；进去之后不再重复。 */
+.landing-guide {
+  margin-bottom: 24px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 234, 226, 0.1);
+}
+
+/* 说明与标题同一行：既不占额外一行高度，也让「不需要摄像头」这件事一眼可见。 */
+.landing-guide__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 22px;
+  flex-wrap: wrap;
+}
+
+.landing-guide__heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: rgba(253, 232, 224, 0.6);
+  font-family: 'DM Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.67rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.landing-guide__heading svg { flex: 0 0 auto; color: #f4a895; }
+
+.landing-guide__list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.landing-guide__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 11px;
+  border: 1px solid rgba(255, 234, 226, 0.1);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.022);
+}
+
+.landing-guide__icon { display: grid; flex: 0 0 auto; place-items: center; color: #ffbda9; }
+
+.landing-guide__gesture { min-width: 0; color: rgba(253, 232, 224, 0.8); font-size: 0.74rem; white-space: nowrap; }
+
+.landing-guide__target {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  color: rgba(253, 232, 224, 0.45);
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.landing-guide__target kbd { margin-right: 0; }
+
+.landing-guide__note {
+  margin: 0 0 0 auto;
+  color: rgba(246, 224, 219, 0.42);
+  font-size: 0.72rem;
+  line-height: 1.7;
+  text-align: right;
+}
+
 .experience {
   display: flex;
   flex-direction: column;
@@ -643,6 +719,78 @@ kbd {
   to { opacity: 1; transform: scale(1.12); }
 }
 
+/* 摄像头降级提示（需求 3.1 / 6 / 8）：与手势反馈条同一个角落 —— 摄像头没开启时
+   反馈条本来就不渲染，两者互斥。讲清「现在怎么继续」，可点「知道了」收起，
+   也会在 14 秒后自动退场，不会长期压住粒子主体。 */
+.camera-fallback {
+  position: absolute;
+  top: 26px;
+  left: 26px;
+  z-index: 3;
+  width: min(272px, 54%);
+  padding: 11px 13px 10px;
+  border: 1px solid rgba(255, 209, 139, 0.26);
+  border-radius: 4px;
+  background: rgba(10, 12, 24, 0.6);
+  animation: fallbackIn 420ms ease both;
+}
+
+.camera-fallback--closed { border-color: rgba(255, 234, 226, 0.16); }
+
+.camera-fallback__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  color: rgba(250, 237, 233, 0.82);
+  font-family: 'DM Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.63rem;
+  letter-spacing: 0.05em;
+}
+
+.camera-fallback__dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #ffd18b;
+  box-shadow: 0 0 12px rgba(255, 209, 139, 0.75);
+}
+
+.camera-fallback--closed .camera-fallback__dot { background: #c7ad83; box-shadow: 0 0 12px rgba(199, 173, 131, 0.6); }
+
+.camera-fallback__body { margin: 8px 0 0; color: rgba(250, 237, 233, 0.52); font-size: 0.6rem; line-height: 1.6; }
+
+.camera-fallback__steps {
+  margin: 8px 0 0;
+  padding-left: 15px;
+  color: rgba(250, 237, 233, 0.62);
+  font-size: 0.6rem;
+  line-height: 1.75;
+}
+
+.camera-fallback__steps li::marker { color: #ff9f88; }
+
+.camera-fallback__foot { display: flex; justify-content: flex-end; margin-top: 9px; }
+
+.camera-fallback__dismiss {
+  padding: 3px 11px;
+  border: 1px solid rgba(255, 234, 226, 0.2);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(253, 232, 224, 0.72);
+  font-size: 0.6rem;
+  cursor: pointer;
+  transition: border-color 180ms ease, color 180ms ease, background 180ms ease;
+}
+
+.camera-fallback__dismiss:hover { border-color: rgba(255, 176, 158, 0.55); background: rgba(255, 171, 150, 0.1); color: #ffc0af; }
+
+@keyframes fallbackIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+
 .camera-preview video { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: cover; transform: scaleX(-1); }
 .camera-preview span { display: flex; align-items: center; gap: 5px; padding: 6px 8px; color: rgba(255, 235, 226, 0.65); font-family: 'DM Mono', ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.59rem; }
 
@@ -653,6 +801,8 @@ kbd {
 .stage-quality { opacity: 0.28; font-family: 'DM Mono', ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.57rem; font-variant-numeric: tabular-nums; transition: opacity 360ms ease; }
 .stage-quality[data-tier='medium'] { opacity: 0.5; color: rgba(255, 214, 190, 0.85); }
 .stage-quality[data-tier='low'] { opacity: 0.72; color: #ffb59f; }
+/* 「减少动效」是使用者的偏好，不是设备性能：多一个短标记 + 偏暖的色，和自动降档区分开。 */
+.stage-quality[data-motion='reduced'] { opacity: 0.7; color: #ffd0ab; }
 .is-paused .star { animation-play-state: paused; }
 
 .mode-nav { padding-top: 21px; border-top: 1px solid rgba(255, 234, 226, 0.1); }
@@ -681,6 +831,9 @@ kbd {
 .mode-tab svg { margin-left: auto; color: #ffaf9a; }
 .music-note { margin-top: 12px; color: rgba(253, 232, 224, 0.32); font-size: 0.59rem; letter-spacing: 0.03em; text-transform: none; }
 
+/* 减少动效 / 低性能的替代路径（需求 8）：一句话说明就够，不新增设置面板。 */
+.motion-note { margin: 7px 0 0; color: rgba(253, 232, 224, 0.3); font-size: 0.59rem; letter-spacing: 0.02em; line-height: 1.6; }
+
 @keyframes twinkle {
   from { opacity: 0.22; transform: scale(0.7); }
   to { opacity: 0.82; transform: scale(1.18); }
@@ -691,6 +844,15 @@ kbd {
   to { transform: translate(-50%, -50%) rotate(4deg) scale(1.04); }
 }
 
+/* 视口偏矮时（900px 左右的屏幕 + 浏览器工具栏，可视高度约 746px）把落地页留白略收一点，
+   让手势说明与页脚都留在首屏之内；高屏上完全保持原来的呼吸感。 */
+@media (max-height: 880px) {
+  .landing-content { padding: 3vh 0 3vh; }
+  .landing-message { margin-top: 22px; }
+  .landing-actions { margin-top: 26px; }
+  .privacy-note { margin-top: 20px; }
+}
+
 @media (max-width: 860px) {
   .landing,
   .experience { width: min(calc(100% - 40px), 680px); }
@@ -698,6 +860,7 @@ kbd {
   .experience-grid { grid-template-columns: 1fr; gap: 36px; }
   .landing-content { padding: 8vh 0 5vh; }
   .landing-orbit { width: min(76vw, 390px); justify-self: center; }
+  .landing-guide__list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .experience-grid { padding-top: 48px; }
   .scene-copy h1 { max-width: 650px; }
   .stage { width: 100%; }
@@ -711,6 +874,10 @@ kbd {
   .landing-message { margin-top: 23px; line-height: 1.75; }
   .landing-footer { align-items: flex-start; flex-wrap: wrap; gap: 10px 13px; font-size: 0.6rem; }
   .landing-footer span:last-child { width: 100%; margin-left: 0; }
+  .landing-guide__heading { font-size: 0.62rem; line-height: 1.5; }
+  .landing-guide__item { flex-direction: column; align-items: flex-start; gap: 6px; padding: 10px; }
+  .landing-guide__target { margin-left: 0; }
+  .landing-guide__note { font-size: 0.68rem; }
   .topbar { align-items: flex-start; gap: 12px; }
   .topbar-actions { gap: 7px; }
   .camera-status { max-width: 104px; font-size: 0.56rem; line-height: 1.3; text-align: right; }
@@ -722,6 +889,7 @@ kbd {
   .camera-preview { right: 16px; bottom: 28px; width: 115px; }
   .gesture-feedback { top: 18px; left: 18px; width: min(216px, 62%); padding: 8px 10px; }
   .gesture-feedback__hint { font-size: 0.55rem; }
+  .camera-fallback { top: 18px; left: 18px; width: min(238px, 68%); padding: 9px 11px; }
   .stage-caption { right: 16px; left: 16px; }
   .mode-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .mode-tab { min-height: 42px; padding-inline: 10px; font-size: 0.74rem; }
