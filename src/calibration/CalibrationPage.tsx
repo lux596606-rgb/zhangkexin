@@ -8,12 +8,13 @@ import {
   GestureStabilityTracker,
   HOLD_MS,
   INDEX_EXTENSION_MIN_RATIO,
-  MIN_OTHER_FINGERS_EXTENDED,
+  LOSS_TOLERANCE_MS,
   PINCH_ENTER_RATIO,
   PINCH_EXIT_RATIO,
   PINCH_MIN_SAMPLES,
   PINCH_WINDOW_FRAMES,
   PinchSmoother,
+  RELEASE_MS,
   UNSTABLE_HOLD_PENALTY_MS,
   classifyGesture,
   describeHand,
@@ -398,9 +399,10 @@ export function CalibrationPage() {
     const bestSeconds = Math.max(hold.bestMs, hold.currentMs) / 1000
     const detail: string[] = [
       `食指：腕-指尖/腕-PIP ${fmt(indexFinger?.wristTipRatio)}（需 > ${FINGER_EXTENSION_WRIST_RATIO}）、PIP ${fmt(indexFinger?.pipAngleDeg, 1)}°（需 ≥ ${FINGER_EXTENSION_MIN_ANGLE_DEG}°）→ ${hand.indexExtended ? '伸直 ✅' : '判为未伸直 ❌'}`,
-      `其余三指伸直 ${hand.otherExtended} 指（需 ≥ ${MIN_OTHER_FINGERS_EXTENDED} 指）`,
+      `其余三指伸直 ${hand.otherExtended} 指 —— 仅诊断参考：捏合**不要求**它们伸直，真人捏合时它们自然弯曲（伸直数 0~1 属正常）`,
       `捏合比值 ${fmt(hand.pinchRatio)}，进入阈值 ${PINCH_ENTER_RATIO}、退出阈值 ${PINCH_EXIT_RATIO} → ${hand.pinchRatio <= PINCH_ENTER_RATIO ? '已进入' : hand.pinchRatio <= PINCH_EXIT_RATIO ? '在迟滞区（保持住才算进入）' : '未进入（两指还不够近）'}`,
       `当前几何成立已连续保持 ${heldSeconds.toFixed(1)}s / 本轮最佳 ${bestSeconds.toFixed(1)}s（判「可稳定触发」需要 ≥ ${STABLE_HOLD_MS / 1000}s）`,
+      `保持窗口 ${HOLD_MS}ms、丢失容忍 ${LOSS_TOLERANCE_MS}ms：中途识别不到不超过 ${LOSS_TOLERANCE_MS}ms 时进度不清零（但丢失的时间不计入保持）`,
     ]
 
     // 1) 几何成立 + 平滑确认，且稳定保持 → 这个阈值在真实手上是能用的。
@@ -428,22 +430,31 @@ export function CalibrationPage() {
       }
     }
 
-    // 3) 差一点：两指已经够近，是伸直判据挡住了 —— 这是本次校准最关心的失败形态。
+    // 3) 差一点：两指已经够近，是食指伸直判据挡住了 —— 这是本次校准最关心的失败形态。
+    //    判据只剩两条（食指腕比值 + 食指 PIP 角），所以「差一点」必然卡在食指上；
+    //    这里进一步指出卡在哪一条，避免人对着一个笼统的结论猜。
     const nearMiss = hand.pinchRatio <= PINCH_ENTER_RATIO
     if (nearMiss) {
       const pipDeficit = FINGER_EXTENSION_MIN_ANGLE_DEG - (indexFinger?.pipAngleDeg ?? FINGER_EXTENSION_MIN_ANGLE_DEG)
       const ratioDeficit = (indexFinger?.wristTipRatio ?? FINGER_EXTENSION_WRIST_RATIO) - FINGER_EXTENSION_WRIST_RATIO
-      const suggestsPipRelax = indexFinger !== undefined && indexFinger.pipAngleDeg < FINGER_EXTENSION_MIN_ANGLE_DEG && ratioDeficit > 0
+      const pipShort = indexFinger !== undefined && indexFinger.pipAngleDeg < FINGER_EXTENSION_MIN_ANGLE_DEG
+      const wristShort = indexFinger !== undefined && indexFinger.wristTipRatio <= FINGER_EXTENSION_WRIST_RATIO
+      const bottleneck = pipShort && wristShort
+        ? '食指两条判据都没过（PIP 角与腕比值）'
+        : pipShort
+          ? '卡在食指 PIP 角'
+          : '卡在食指腕-指尖/腕-PIP 比值（食指尖没伸出掌心）'
       return {
         level: 'bad',
         headline: frame.trackerTrigger === 'birthday'
-          ? '捏合已经触发过，但这一帧的判据又掉出来了（阈值贴线）'
-          : `捏合差一点成立：两指距离已经达标（${fmt(hand.pinchRatio)} ≤ ${PINCH_ENTER_RATIO}），是伸直判据挡住了`,
+          ? '捏合已经触发过，但这一帧的食指判据又掉出来了（阈值贴线）'
+          : `捏合差一点成立：两指距离已经达标（${fmt(hand.pinchRatio)} ≤ ${PINCH_ENTER_RATIO}），是食指伸直判据挡住了（${bottleneck}）`,
         detail: [
           ...hand.blockers,
-          suggestsPipRelax
+          pipShort
             ? `供参考：把 FINGER_EXTENSION_MIN_ANGLE_DEG 从 ${FINGER_EXTENSION_MIN_ANGLE_DEG}° 放宽到 ${Math.floor(indexFinger?.pipAngleDeg ?? FINGER_EXTENSION_MIN_ANGLE_DEG)}° 这一帧就能通过（不要照单全收，要连做几次看最小值）`
-            : `供参考：食指伸直角度不是瓶颈（PIP 阈值 ${FINGER_EXTENSION_MIN_ANGLE_DEG}°），瓶颈在「其余三指伸直数」`,
+            : `供参考：食指 PIP 角不是瓶颈（${fmt(indexFinger?.pipAngleDeg, 1)}° ≥ ${FINGER_EXTENSION_MIN_ANGLE_DEG}°），瓶颈在腕-指尖/腕-PIP 比值`,
+          `其余三指伸直 ${hand.otherExtended} 指 —— 这一项已经不参与判定（自然弯曲才是真人捏合的样子），不再是阻塞项`,
           `角度缺口 ${pipDeficit > 0 ? `${pipDeficit.toFixed(1)}°` : '无'}；腕比值余量 ${ratioDeficit.toFixed(3)}`,
           `本轮最佳保持 ${bestSeconds.toFixed(1)}s`,
         ],
@@ -599,7 +610,7 @@ export function CalibrationPage() {
             <div><dt>两指距离 / 掌尺度原值</dt><dd>{fmt(hand?.pinchDistance, 4)} / {fmt(hand?.palmScale, 4)}</dd></div>
             <div><dt>单帧捏合观测 pinchObserved</dt><dd data-testid="pinch-observed">{hand ? (hand.pinchObserved ? '成立' : '不成立') : '—'}</dd></div>
             <div><dt>食指是否伸直 indexExtended</dt><dd data-testid="index-extended">{hand ? (hand.indexExtended ? '伸直' : '未伸直') : '—'}</dd></div>
-            <div><dt>其余三指伸直数 / 下限</dt><dd data-testid="other-extended">{hand ? `${hand.otherExtended} / ${hand.minOtherFingersExtended}` : '—'}</dd></div>
+            <div><dt>其余三指伸直数（仅诊断）</dt><dd data-testid="other-extended">{hand ? `${hand.otherExtended} 指 —— 不参与判定，0~1 指属正常` : '—'}</dd></div>
             <div><dt>阻塞原因（逐条）</dt><dd data-testid="blockers">{hand?.blockers.length ? hand.blockers.join('；') : '无'}</dd></div>
           </dl>
         </section>
@@ -608,11 +619,13 @@ export function CalibrationPage() {
           <div className="cal-card-title">④ 四指伸直判据逐指明细</div>
           <p className="cal-note">
             伸直 = 腕-指尖 / 腕-PIP &gt; 1.02（FINGER_EXTENSION_WRIST_RATIO）且 PIP 夹角 ≥ 130°（FINGER_EXTENSION_MIN_ANGLE_DEG）。
-            拇指不参与伸直判定（它没有 PIP），这里列出仅供对照。食指另有 INDEX_EXTENSION_MIN_RATIO = {INDEX_EXTENSION_MIN_RATIO} 的说明口径。
+            捏合判定**只读食指**这一行：拇指不参与（它没有 PIP），中指/无名指/小指自从删掉「至少两指伸直」门槛后
+            也已退出判定 —— 真人捏合时它们自然弯曲，所以这三行判成「未伸直」是正常的，不影响捏合成立。
+            食指另有 INDEX_EXTENSION_MIN_RATIO = {INDEX_EXTENSION_MIN_RATIO} 的说明口径。
           </p>
           <table className="cal-table" data-testid="finger-table">
             <thead>
-              <tr><th>手指</th><th>腕-指尖/腕-PIP</th><th>PIP 夹角</th><th>伸直？</th><th>计入判定</th></tr>
+              <tr><th>手指</th><th>腕-指尖/腕-PIP</th><th>PIP 夹角</th><th>伸直？</th><th>计入捏合判定</th></tr>
             </thead>
             <tbody>
               {(hand?.fingers ?? []).map((finger) => (
@@ -631,7 +644,7 @@ export function CalibrationPage() {
                     </span>
                   </td>
                   <td data-testid={`finger-extended-${finger.key}`}>{finger.extended ? '伸直' : '未伸直'}</td>
-                  <td>{finger.countsTowardExtension ? '是' : '否（参考）'}</td>
+                  <td>{finger.countsTowardPinch ? '是（唯一判据）' : '否（仅参考）'}</td>
                 </tr>
               ))}
               {hand === null && (
@@ -652,7 +665,11 @@ export function CalibrationPage() {
           </dl>
           <progress max={1} value={frame.trackerProgress} />
           <p className="cal-note">
-            产品侧参数（同样直接来自实现导出）：HOLD_MS = {HOLD_MS}、COOLDOWN_MS = {COOLDOWN_MS}、抖动惩罚 {UNSTABLE_HOLD_PENALTY_MS}ms、平滑窗口 {PINCH_WINDOW_FRAMES} 帧 / 至少 {PINCH_MIN_SAMPLES} 帧。
+            产品侧参数（同样直接来自实现导出）：HOLD_MS = {HOLD_MS}、COOLDOWN_MS = {COOLDOWN_MS}、RELEASE_MS = {RELEASE_MS}、
+            丢失容忍 LOSS_TOLERANCE_MS = {LOSS_TOLERANCE_MS}（窗口内识别不到时 <strong>不清零</strong>，候选与已累计时间都保留，
+            但丢失的时间不计入保持时间；超过这个窗口才清零重算）、抖动惩罚 {UNSTABLE_HOLD_PENALTY_MS}ms、
+            平滑窗口 {PINCH_WINDOW_FRAMES} 帧 / 至少 {PINCH_MIN_SAMPLES} 帧。
+            candidate 在 status = unrecognized 时仍然有值是**正常的**：那是丢失容忍正在生效。
           </p>
         </section>
 
@@ -686,7 +703,8 @@ export function CalibrationPage() {
               <li>classifyGesture 分布：{summary.summary.modeCounts.map((entry) => `${entry.name}×${entry.count}`).join('，') || '无'}</li>
               <li>捏合成立帧数（单帧观测 / 平滑确认）：{summary.summary.observedFrames} / {summary.summary.confirmedFrames}</li>
               <li>捏合成立时食指 PIP 角 min/中位/max：{summary.summary.confirmedPip ? `${summary.summary.confirmedPip.min.toFixed(1)}° / ${summary.summary.confirmedPip.median.toFixed(1)}° / ${summary.summary.confirmedPip.max.toFixed(1)}°（n=${summary.summary.confirmedPip.samples}）` : '无样本'}</li>
-              <li>差一点成立（距离达标但判据未过）帧数：{summary.summary.nearMissFrames}{summary.summary.nearMissPip ? `，其中食指 PIP 中位 ${summary.summary.nearMissPip.median.toFixed(1)}°` : ''}</li>
+              <li>捏合成立时其余三指伸直数 min/中位/max（仅诊断，不参与判定）：{summary.summary.confirmedOtherExtended ? `${Math.round(summary.summary.confirmedOtherExtended.min)} / ${Math.round(summary.summary.confirmedOtherExtended.median)} / ${Math.round(summary.summary.confirmedOtherExtended.max)}（n=${summary.summary.confirmedOtherExtended.samples}）` : '无样本'}</li>
+              <li>差一点成立（距离达标但食指未伸直）帧数：{summary.summary.nearMissFrames}{summary.summary.nearMissPip ? `，其中食指 PIP 中位 ${summary.summary.nearMissPip.median.toFixed(1)}°` : ''}</li>
               <li>差一点成立卡在哪一条：{summary.summary.nearMissReasons.map((entry) => `${entry.reason}×${entry.count}`).join('，') || '无'}</li>
             </ul>
           )}
@@ -712,7 +730,10 @@ export function CalibrationPage() {
           <p className="cal-note">
             阈值对照（产品当前生效值，本页只读不改）：捏合进入 {PINCH_ENTER_RATIO} / 退出 {PINCH_EXIT_RATIO}；
             伸直腕比值 &gt; {FINGER_EXTENSION_WRIST_RATIO}；伸直 PIP 角 ≥ {FINGER_EXTENSION_MIN_ANGLE_DEG}°；
-            其余三指至少 {MIN_OTHER_FINGERS_EXTENDED} 指伸直；置信度 ≥ {CONFIDENCE_THRESHOLD}。
+            置信度 ≥ {CONFIDENCE_THRESHOLD}；丢失容忍 {LOSS_TOLERANCE_MS}ms。
+            捏合的完整判据只有两条：<strong>食指伸直</strong>（腕比值 &gt; {FINGER_EXTENSION_WRIST_RATIO} 且 PIP ≥ {FINGER_EXTENSION_MIN_ANGLE_DEG}°）
+            与 <strong>两指尖贴合</strong>（比值 ≤ {PINCH_ENTER_RATIO}）。
+            其余三指的伸直数<strong>已不参与判定</strong>（旧门槛「至少两指伸直」在真人手上恒不成立，已删除）。
           </p>
         </section>
       </div>

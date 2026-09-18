@@ -84,6 +84,29 @@ try {
   writeFileSync(`${ARTIFACT_DIR}\\feedback.png`, Buffer.from(data, 'base64'))
   console.log(`截图: ${ARTIFACT_DIR}\\feedback.png`)
 
+  // 布局体检：舞台是否吃满右栏、摄像头是否真的在动画框之外、有没有溢出
+  const layout = await evaluate(
+    session,
+    `(() => {
+       const box = (sel) => { const el = document.querySelector(sel); if (!el) return null;
+         const r = el.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) }; };
+       const stage = box('.stage'), preview = box('.camera-preview'), grid = box('.experience-grid'), copy = box('.scene-copy');
+       const inside = (outer, inner) => Boolean(outer && inner
+         && inner.x >= outer.x - 1 && inner.y >= outer.y - 1
+         && inner.x + inner.w <= outer.x + outer.w + 1 && inner.y + inner.h <= outer.y + outer.h + 1);
+       return {
+         viewport: { w: window.innerWidth, h: window.innerHeight },
+         stage, preview, grid, copy,
+         previewInsideStage: inside(stage, preview),
+         stageAreaShare: stage && grid ? Math.round((stage.w * stage.h / (grid.w * grid.h)) * 100) : null,
+         pageScrolls: document.documentElement.scrollHeight > window.innerHeight + 1,
+         scrollHeight: document.documentElement.scrollHeight,
+       };
+     })()`,
+  )
+  console.log('\n=== 布局体检 ===')
+  console.log(JSON.stringify(layout, null, 2))
+
   // 状态是否真的在随识别推进（而不是停在默认文案）
   console.log('\n=== 反馈条文案随时间变化（证明订阅在生效） ===')
   for (const wait of [0, 1500, 3000, 5000]) {

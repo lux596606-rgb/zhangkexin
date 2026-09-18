@@ -41,6 +41,28 @@ export const COOLDOWN_MS = 500
 export const RELEASE_MS = 250
 
 /**
+ * 保持窗口中途「识别不到」的容忍时长：真人实测发现，真实手势识别是抖动的 —— 总有若干帧
+ * 一个手势都认不出来。旧实现一遇到这种帧就把候选姿势与已累计的保持时间全部清零，于是
+ * HOLD_MS 的进度永远攒不满，四个手势都表现为「有时没反应」（实测：连续做同一个手势、
+ * 每 4 帧掉 1 帧，6 秒内 progress 一直停在 0.00，一次都没触发）。这个窗口就是给那几帧兜底的。
+ *
+ * 取 150ms 的理由：
+ * - 摄像头 30fps 时一帧 ≈ 33ms，150ms ≈ 连续丢掉 4~5 帧；MediaPipe 单帧推理在普通笔记本上
+ *   偶尔会占满 30~50ms，因此「连丢 3~4 帧」正是最常见的抖动形态，100ms 会漏掉一部分。
+ * - 不取更大（200ms+）：容忍窗口越长，越可能把「人已经松手/换姿势」误当成同一次保持，
+ *   而且下面的「丢失不计入保持时间」意味着窗口越长、总时长上限越高。
+ * - 必须小于 RELEASE_MS(250)：这样「跟踪器愿意替候选兜底的丢失」总比「解锁已锁定手势的窗口」
+ *   更短，两种「短暂丢失」的语义保持在同一个量级上，不会互相串味。
+ * - 150 < HOLD_MS/4：单次抖动最多给保持窗口加约 1/5 的墙钟时间（700 → 850ms），
+ *   仍在需求 3.2「稳定约 0.6-1 秒后切换」区间内。
+ *
+ * 关键约束：容忍窗口内**只保留进度，不把丢失的时间算成保持时间**。判定用的
+ * `now - candidateSince - candidateLostMs` 扣掉了全部丢失时长，所以「保持 HOLD_MS」
+ * 始终等于「真正被识别到 HOLD_MS」——总时长只会变长，不会变短。
+ */
+export const LOSS_TOLERANCE_MS = 150
+
+/**
  * 抖动抑制参数：连续多次「还没站稳就换姿势」的识别会让保持窗口略微变长，避免
  * 手在摄像头前晃动时画面反复切换。
  * - UNSTABLE_STREAK：短时间内连续这么多次候选姿势更替，才视为「手势不稳定」。
@@ -61,16 +83,20 @@ export const UNSTABLE_WINDOW_MS = 1500
  *   几乎贴合，实测比值落在 0.05~0.25；取 0.42 而不是更小，是因为 MediaPipe 的
  *   21 点在这两根手指末端本身就有一点抖动，阈值太紧会漏判「捏得不够用力」的人。
  * - PINCH_EXIT_RATIO：略宽于进入阈值（0.52），构成迟滞，避免在临界点反复开合。
- * - MIN_OTHER_FINGERS_EXTENDED：其余三指中**至少两指**伸直。攥着半个拳头捏合的人
- *   很多（无名指/小指习惯性蜷起），要求三指全伸会漏判；要求两指既保留了
- *   「这是捏合不是握拳」的证据，又不会误伤。
- * - INDEX_EXTENSION_MIN_RATIO：食指必须基本伸直。这条是防「握拳」的关键：握拳时食指尖
- *   蜷回掌心，食指尖到手腕的距离会被压缩到与中节长度相当（比值 < 1.02 的伸直判据），
- *   于是捏合直接不成立 —— 攥拳（哪怕拇指食指贴在一起）仍然归 Closed_Fist 猪头。
+ * - INDEX_EXTENSION_MIN_RATIO：食指必须基本伸直（与 FINGER_EXTENSION_WRIST_RATIO 同值）。
+ *   这条是**捏合与握拳之间唯一的几何分界线**：握拳时食指尖蜷回掌心，食指尖到手腕的距离
+ *   会被压缩到与中节长度相当（比值 0.864 < 1.02，FK 夹具实测），于是捏合直接不成立 ——
+ *   攥拳（哪怕拇指食指贴在一起，此时捏合比值 ≈ 0）仍然归 Closed_Fist 猪头。
+ *
+ * 这里曾经还有一条 `MIN_OTHER_FINGERS_EXTENDED = 2`（其余三指至少两指伸直），**已删除**：
+ * 它在真人手上恒不成立 —— 真人捏合时中指/无名指/小指是自然弯曲的（像捏起一个小东西），
+ * 伸直数实测是 0~1，于是这条门槛把捏合**恒定判负**（FK 实测：食指 165° 伸直 + 两指尖精确
+ * 贴合 + 其余三指自然弯曲 → 旧判据 null、新判据 birthday）。它本想提供的「这是捏合不是握拳」
+ * 的证据，由上面的食指伸直判据独立且更可靠地提供（见 FINGER_EXTENSION_MIN_ANGLE_DEG 的扫描）。
+ * 其余三指的伸直数现在**只是一项诊断量**（`HandDiagnostics.otherExtended`），不参与任何判定。
  */
 export const PINCH_ENTER_RATIO = 0.42
 export const PINCH_EXIT_RATIO = 0.52
-export const MIN_OTHER_FINGERS_EXTENDED = 2
 export const INDEX_EXTENSION_MIN_RATIO = 1.02
 
 /**
@@ -115,12 +141,13 @@ export const FINGER_EXTENSION_WRIST_RATIO = 1.02
  *   （夹具上一版那个 139° 的临界样本是同一个原因）。
  * - 取 130°：比「真实拇指可达」的 135° 再留 5° 余量，收下 130°~145° 的轻微弯曲捏合；
  *   离握拳实测的 40° 还有 90° 余量（用例显式断言这个余量 ≥ 60°）。
- * - **不继续下调**（例如 110°/90°）：那会连带放松「其余三指至少两指伸直」这道闸门 ——
- *   半握的中指/无名指 PIP 常在 100°~130°，再降就会把它们也当成伸直。剩余 90°~130° 的漏判
- *   区间不是阈值能解决的，需要改判据本体（例如「食指尖必须是离拇指尖最近的指尖」），
- *   已作为遗留风险上报，不在本次改动范围内。
- * - 误判侧不靠这一条兜底：握拳夹具的食指同时踩掉三条判据（PIP 40° < 130°、
- *   腕-指尖/腕-PIP 0.864 < 1.02、另外三指也是 34°~38° 的蜷指），捏合比值即使为 0 也不成立。
+ * - **不继续下调**（例如 110°/90°）：删掉「其余三指伸直数」那道门槛后，食指伸直判据成了
+ *   捏合与握拳之间**唯一**的几何分界线，再降就是用误判换漏判。握拳夹具实测食指 PIP 40°，
+ *   130° 与它隔着 90° 余量（用例显式断言这个余量 ≥ 60°）；一路降到 90° 就等于把「攥着拳头、
+ *   拇指尖恰好碰到蜷起的食指尖」也认成捏合。剩余 90°~130° 的漏判区间不是阈值能解决的，需要
+ *   改判据本体（例如「食指尖必须是离拇指尖最近的指尖」），已作为遗留风险上报，不在本次改动范围内。
+ * - 误判侧不靠这一条兜底：握拳夹具的食指同时踩掉两条判据（PIP 40° < 130°、
+ *   腕-指尖/腕-PIP 0.864 < 1.02），捏合比值即使为 0 也不成立。
  */
 export const FINGER_EXTENSION_MIN_ANGLE_DEG = 130
 
@@ -194,11 +221,11 @@ function palmScaleOf(landmarks: readonly Landmark[]): number {
 type PinchObservation = {
   /** 拇指尖-食指尖距离 / 掌尺度；越小越像捏合。 */
   ratio: number
-  /** 食指是否伸直（防握拳的关键判据）。 */
+  /** 食指是否伸直（防握拳的**唯一**几何判据）。 */
   indexExtended: boolean
-  /** 其余三指中伸直的数量。 */
+  /** 其余三指中伸直的数量。**仅诊断用**：捏合不要求它们伸直（真人捏合时自然弯曲）。 */
   otherExtended: number
-  /** 是否为「食指伸直 + 至少两指伸直 + 两指贴合」的单帧捏合。 */
+  /** 是否为「食指伸直 + 两指贴合」的单帧捏合。 */
   pinch: boolean
 }
 
@@ -217,9 +244,9 @@ function observePinch(landmarks: readonly Landmark[]): PinchObservation | null {
   ].filter(Boolean).length
 
   const pinchRatio = distance(thumbTip, indexTip) / palmScaleOf(landmarks)
-  const pinch = indexExtended
-    && otherExtended >= MIN_OTHER_FINGERS_EXTENDED
-    && pinchRatio <= PINCH_ENTER_RATIO
+  // 只有两条判据：食指基本伸直（这是捏合与握拳的分界线）+ 两指尖真的贴上。
+  // 其余三指是否伸直**不参与**判定 —— 真人捏合时它们自然弯曲（见 PINCH_ENTER_RATIO 上方注释）。
+  const pinch = indexExtended && pinchRatio <= PINCH_ENTER_RATIO
 
   return { ratio: pinchRatio, indexExtended, otherExtended, pinch }
 }
@@ -322,8 +349,12 @@ export type FingerDiagnostics = {
   pipAngleDeg: number
   /** 与 `isFingerExtended()` 完全同一套判据给出的结果。 */
   extended: boolean
-  /** 拇指不参与 `isFingerExtended`（它没有 PIP），这里标出来避免误读。 */
-  countsTowardExtension: boolean
+  /**
+   * 这一指的伸直情况是否**真的参与**捏合判定。现在只有食指为 true：
+   * 拇指没有 PIP（本来就不参与），而中指/无名指/小指在「其余三指至少两指伸直」门槛删除后
+   * 已彻底退出判定，只作诊断展示。
+   */
+  countsTowardPinch: boolean
 }
 
 export type HandDiagnostics = {
@@ -338,12 +369,14 @@ export type HandDiagnostics = {
   pinchExitRatio: number
   /** pinchRatio 与两个阈值的关系：进入/迟滞区/退出。 */
   pinchZone: 'below-enter' | 'hysteresis' | 'above-exit'
-  /** 食指是否伸直（防握拳的关键判据）。 */
+  /** 食指是否伸直（捏合与握拳之间**唯一**的几何分界线，也是唯一的伸直类阻塞项）。 */
   indexExtended: boolean
-  /** 其余三指（中指/无名指/小指）里伸直的数量，以及要求的下限。 */
+  /**
+   * 其余三指（中指/无名指/小指）里伸直的数量。**仅诊断参考**：捏合不要求它们伸直，
+   * 真人捏合时它们通常自然弯曲（伸直数 0~1 是正常的），这里只用来排查「手是不是摆歪了」。
+   */
   otherExtended: number
-  minOtherFingersExtended: number
-  /** 单帧捏合观测是否成立（几何 + 伸直判据全通过，未做多帧平滑）。 */
+  /** 单帧捏合观测是否成立（食指伸直 + 两指贴合，未做多帧平滑）。 */
   pinchObserved: boolean
   /** 未通过的原因，按判据逐条给出，页面直接展示。 */
   blockers: string[]
@@ -391,7 +424,7 @@ function fingerDiagnostics(landmarks: readonly Landmark[], finger: (typeof finge
     wristPipDistance,
     pipAngleDeg,
     extended: wristTipRatio > FINGER_EXTENSION_WRIST_RATIO && pipAngleDeg >= FINGER_EXTENSION_MIN_ANGLE_DEG,
-    countsTowardExtension: finger.key !== 'thumb',
+    countsTowardPinch: finger.key === 'index',
   }
 }
 
@@ -422,17 +455,16 @@ export function describeHand(landmarks: readonly Landmark[]): HandDiagnostics | 
   /**
    * 逐条列出「差一点才成立」的原因：只有在两指距离已经进入阈值、而完整判据没通过时才有意义
    * —— 距离不达标时就谈不上是哪条伸直判据挡住的（那是「手还没捏上」，不是阈值问题）。
+   *
+   * 删除「其余三指伸直数」门槛后，这里的阻塞项只剩食指一条：捏合 = 食指伸直 + 两指贴合，
+   * 所以「距离已达标但不成立」必然等价于「食指没伸直」。其余三指的伸直数只作诊断展示
+   * （`otherExtended`），不会出现在 blockers 里 —— 否则页面会显示一个已经不存在的门槛。
    */
   const blockers: string[] = []
-  if (pinchRatio <= PINCH_ENTER_RATIO && !(observation?.pinch ?? false)) {
-    if (!indexExtended) {
-      blockers.push(
-        `食指不伸直：腕-指尖/腕-PIP ${indexFinger.wristTipRatio.toFixed(3)}（需 > ${FINGER_EXTENSION_WRIST_RATIO}）、PIP ${indexFinger.pipAngleDeg.toFixed(1)}°（需 ≥ ${FINGER_EXTENSION_MIN_ANGLE_DEG}°）`,
-      )
-    }
-    if (otherExtended < MIN_OTHER_FINGERS_EXTENDED) {
-      blockers.push(`其余三指只有 ${otherExtended} 指伸直（需 ≥ ${MIN_OTHER_FINGERS_EXTENDED}）`)
-    }
+  if (pinchRatio <= PINCH_ENTER_RATIO && !(observation?.pinch ?? false) && !indexExtended) {
+    blockers.push(
+      `食指不伸直：腕-指尖/腕-PIP ${indexFinger.wristTipRatio.toFixed(3)}（需 > ${FINGER_EXTENSION_WRIST_RATIO}）、PIP ${indexFinger.pipAngleDeg.toFixed(1)}°（需 ≥ ${FINGER_EXTENSION_MIN_ANGLE_DEG}°）`,
+    )
   }
 
   const pinchZone: HandDiagnostics['pinchZone'] =
@@ -447,7 +479,6 @@ export function describeHand(landmarks: readonly Landmark[]): HandDiagnostics | 
     pinchZone,
     indexExtended,
     otherExtended,
-    minOtherFingersExtended: MIN_OTHER_FINGERS_EXTENDED,
     pinchObserved: observation?.pinch ?? false,
     blockers,
     fingers,
@@ -478,6 +509,8 @@ export type GestureTrackerOptions = {
   cooldownMs: number
   releaseMs: number
   recognizedMs: number
+  /** 候选姿势中途识别不到时，保留候选与已累计保持时间的容忍时长。 */
+  lossToleranceMs: number
   /** 候选姿势更替的计数窗口，超出窗口的更替不再计入抖动。 */
   unstableWindowMs: number
   /** 窗口内连续更替多少次才判定为抖动。 */
@@ -491,6 +524,7 @@ const defaultTrackerOptions: GestureTrackerOptions = {
   cooldownMs: COOLDOWN_MS,
   releaseMs: RELEASE_MS,
   recognizedMs: 850,
+  lossToleranceMs: LOSS_TOLERANCE_MS,
   unstableWindowMs: UNSTABLE_WINDOW_MS,
   unstableStreak: UNSTABLE_STREAK,
   unstableHoldPenaltyMs: UNSTABLE_HOLD_PENALTY_MS,
@@ -499,6 +533,8 @@ const defaultTrackerOptions: GestureTrackerOptions = {
 /**
  * 姿势稳定状态机：
  * - 保持 holdMs 才触发（防止手一划过就切换）；
+ * - 保持过程中短暂识别不到（≤ lossToleranceMs）不清零，候选与已累计时间都保留，
+ *   但丢失的时间不计入保持时间（真人实测：识别抖动是常态，清零会让手势「有时没反应」）；
  * - 触发后 cooldownMs 内不再触发同一姿势（需求 3.2）；
  * - 姿势消失超过 releaseMs 才解除锁定，于是同一个手势可以重复触发（需求 3.4.3）；
  * - 识别不到手势时什么都不做，画面保持当前样式（需求 8「误识别不触发不可逆操作」）；
@@ -508,6 +544,13 @@ export class GestureStabilityTracker {
   private readonly options: GestureTrackerOptions
   private candidateMode: GestureMode | null = null
   private candidateSince = 0
+  /**
+   * 本次候选姿势里「已经被容忍的丢失」累计时长。它是从 `now - candidateSince` 里扣掉的量，
+   * 保证 held 只统计真正识别到手势的时间（HOLD_MS 不会被掉帧白送）。
+   */
+  private candidateLostMs = 0
+  /** 当前这一轮「识别不到」的起点；没有正在进行的丢失时为 null。 */
+  private lostSince: number | null = null
   private lockedMode: GestureMode | null = null
   private absentSince: number | null = null
   private lastTriggeredAt = Number.NEGATIVE_INFINITY
@@ -522,11 +565,21 @@ export class GestureStabilityTracker {
   reset() {
     this.candidateMode = null
     this.candidateSince = 0
+    this.candidateLostMs = 0
+    this.lostSince = null
     this.lockedMode = null
     this.absentSince = null
     this.lastTriggeredAt = Number.NEGATIVE_INFINITY
     this.lastSwitchAt = Number.NEGATIVE_INFINITY
     this.events.length = 0
+  }
+
+  /** 候选姿势清零：丢失超过容忍窗口、候选被更替、以及候选已经触发时都走这里。 */
+  private clearCandidate() {
+    this.candidateMode = null
+    this.candidateSince = 0
+    this.candidateLostMs = 0
+    this.lostSince = null
   }
 
   private pruneEvents(now: number) {
@@ -539,14 +592,51 @@ export class GestureStabilityTracker {
     return this.events.length
   }
 
+  /** 当前候选姿势真正被识别到的时间：容忍掉的丢失时长全部扣除，绝不白送保持时间。 */
+  private heldMs(now: number) {
+    if (this.candidateMode === null) return 0
+    // 丢失进行中时把时钟冻结在「丢失开始的那一刻」，所以丢失期间进度不会前进。
+    const effectiveNow = this.lostSince ?? now
+    return Math.max(0, effectiveNow - this.candidateSince - this.candidateLostMs)
+  }
+
+  /** 当前所需的保持时长（抖动成立时加罚时）。 */
+  private requiredHoldMs(now: number) {
+    const penalized = this.churnStreak(now) >= this.options.unstableStreak
+    return this.options.holdMs + (penalized ? this.options.unstableHoldPenaltyMs : 0)
+  }
+
   update(detected: DetectedGesture | null, now: number): GestureTrackerResult {
     if (!detected || detected.confidence < CONFIDENCE_THRESHOLD) {
-      this.candidateMode = null
-      this.candidateSince = 0
+      if (this.lostSince === null) this.lostSince = now
       if (this.absentSince === null) this.absentSince = now
       if (this.lockedMode && now - this.absentSince >= this.options.releaseMs) {
         this.lockedMode = null
       }
+
+      /**
+       * 丢失容忍：候选姿势还在计时、且这一轮「识别不到」还没超过 LOSS_TOLERANCE_MS 时，
+       * **保留候选与已累计的保持时间**，只把进度冻结在丢失开始那一刻（heldMs 用的是
+       * lostSince 而不是 now）。这正是「有时没反应」的解药：旧实现在这里直接清零，
+       * 真人抖动几帧就永远攒不满 HOLD_MS。
+       *
+       * 对外仍然报 'unrecognized'（与改动前的逐帧表现一致，不引入新的 UI 文案闪烁），
+       * 但 candidate/progress 如实反映内部保留的状态，方便校准页与用例观察。
+       * 超过容忍窗口则落到下面的 clearCandidate()，完全回到旧行为：清零、重新计时。
+       */
+      if (this.candidateMode !== null && now - this.lostSince <= this.options.lossToleranceMs) {
+        return {
+          status: 'unrecognized',
+          trigger: null,
+          progress: clamp(this.heldMs(now) / this.requiredHoldMs(now), 0, 1),
+          candidate: this.candidateMode,
+          mode: null,
+          confidence: 0,
+          unstable: false,
+        }
+      }
+
+      this.clearCandidate()
       return {
         status: 'unrecognized',
         trigger: null,
@@ -559,10 +649,16 @@ export class GestureStabilityTracker {
     }
 
     this.absentSince = null
+    // 丢失结束。同一个候选姿势才把这段空档记进 candidateLostMs（保持时间必须扣掉它）；
+    // 换了姿势就是一次新候选，时间轴在下面整体重置。
+    if (this.lostSince !== null) {
+      const lostMs = now - this.lostSince
+      this.lostSince = null
+      if (detected.mode === this.candidateMode) this.candidateLostMs += lostMs
+    }
 
     if (detected.mode === this.lockedMode) {
-      this.candidateMode = null
-      this.candidateSince = 0
+      this.clearCandidate()
       const status = now - this.lastTriggeredAt < this.options.recognizedMs ? 'recognized' : 'ready'
       return {
         status,
@@ -578,14 +674,17 @@ export class GestureStabilityTracker {
     if (detected.mode !== this.candidateMode) {
       this.candidateMode = detected.mode
       this.candidateSince = now
+      this.candidateLostMs = 0
+      this.lostSince = null
       this.events.push({ mode: detected.mode, at: now })
       this.pruneEvents(now)
     }
 
     const streak = this.churnStreak(now)
     const unstable = streak >= this.options.unstableStreak
-    const requiredHold = this.options.holdMs + (unstable ? this.options.unstableHoldPenaltyMs : 0)
-    const held = now - this.candidateSince
+    const requiredHold = this.requiredHoldMs(now)
+    // 总保持时间必须由「真正识别到」的时间凑满：墙钟时间 = HOLD_MS + 被容忍的丢失时长。
+    const held = this.heldMs(now)
     const progress = clamp(held / requiredHold, 0, 1)
 
     const heldLongEnough = held >= requiredHold
@@ -604,8 +703,7 @@ export class GestureStabilityTracker {
 
     const switching = this.lockedMode !== null && this.lockedMode !== detected.mode
     this.lockedMode = detected.mode
-    this.candidateMode = null
-    this.candidateSince = 0
+    this.clearCandidate()
     this.lastTriggeredAt = now
     if (switching) this.lastSwitchAt = now
     // 触发后清零更替记录：真正的切换本身不算抖动。

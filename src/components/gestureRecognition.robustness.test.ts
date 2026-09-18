@@ -5,7 +5,7 @@ import {
   FINGER_EXTENSION_WRIST_RATIO,
   GestureStabilityTracker,
   HOLD_MS,
-  MIN_OTHER_FINGERS_EXTENDED,
+  LOSS_TOLERANCE_MS,
   PINCH_ENTER_RATIO,
   PINCH_EXIT_RATIO,
   PINCH_MIN_SAMPLES,
@@ -15,6 +15,8 @@ import {
   UNSTABLE_STREAK,
   UNSTABLE_WINDOW_MS,
   classifyGesture,
+  classifyPinch,
+  describeHand,
   type DetectedGesture,
   type GestureMode,
   type GestureRecognitionInput,
@@ -178,18 +180,36 @@ const buildHand = (pose: HandPose = {}): Hand => {
  * 0.66~0.71 掌尺度。这不是笔误，而是「食指基本伸直 + 两指尖真正贴合」这个组合在真实
  * 手上做不到的量化证据（见 gestureRecognition.ts 里 FINGER_EXTENSION_MIN_ANGLE_DEG 的
  * 扫描：拇指 0.66 掌尺度时，食指 PIP 得弯到 135° 以下才可能把指尖送到拇指尖）。
- * 本夹具的职责是钉住判据的输入（食指伸直 + 两指贴合 + 其余手指伸直），
- * 真实捏合的可行性取舍记在实现注释里，并由下面「轻微弯曲 140° / 深弯 120°」两条用例把下界钉住。
+ * 本夹具的职责是钉住判据的输入（食指伸直 + 两指贴合），真实捏合的可行性取舍记在实现注释里，
+ * 并由下面「轻微弯曲 140° / 深弯 120°」两条用例把下界钉住。
+ *
+ * 其余三指在这里默认伸直只是为了沿用「四指伸直」这个基准手型；它们**已经不再参与判定**，
+ * 真实捏合的形状（其余三指自然弯曲）见 `naturalPinchHand`。
  */
 const pinchHand = (pose: HandPose = {}): Hand => buildHand({
   ...pose,
   fingers: { index: PINCH_INDEX, ...pose.fingers },
 })
 
-/** 半握拳捏合：小指蜷起，中指 + 无名指仍伸直（其余三指里正好两指伸直，卡住 >= 2 的边界）。 */
+/**
+ * 真人捏合：食指伸直 + 拇指尖精确贴合 + **其余三指全部自然弯曲**。
+ * 这是本次修复的核心用例 —— 旧判据要求「其余三指至少两指伸直」（otherExtended >= 2），
+ * 而真人捏合时中指/无名指/小指像捏起一个小东西那样自然蜷着，实测伸直数 0~1，
+ * 于是捏合被判成恒定不成立。
+ */
+const naturalPinchHand = (indexAngle = PINCH_INDEX.angle): Hand => pinchHand({
+  fingers: {
+    index: { angle: indexAngle },
+    middle: CURLED,
+    ring: CURLED,
+    pinky: CURLED,
+  },
+})
+
+/** 半握拳捏合：小指蜷起，中指 + 无名指仍伸直（其余三指里正好两指伸直）。 */
 const halfFistPinchHand = (): Hand => pinchHand({ fingers: { pinky: CURLED } })
 
-/** 其余三指里只有一指伸直：不足 MIN_OTHER_FINGERS_EXTENDED，应判为不成立。 */
+/** 其余三指里只有一指伸直（无名指 + 小指蜷起）：旧判据下正好差一指，现在同样成立。 */
 const singleOtherFingerPinchHand = (): Hand => pinchHand({ fingers: { ring: CURLED, pinky: CURLED } })
 
 /** 完全张开的手掌：四指伸直，拇指在体侧，离食指尖 ≈ 0.78 掌尺度（远大于 0.42 进入阈值）。 */
@@ -229,7 +249,7 @@ const isExtended = (hand: Hand, mcp: number, pip: number, tip: number) =>
 /** 伸直的手指名。 */
 const extendedFingers = (hand: Hand) =>
   FINGER_JOINTS.filter(([, mcp, pip, tip]) => isExtended(hand, mcp, pip, tip)).map(([name]) => name)
-/** 其余三指（中指/无名指/小指）里伸直的数量，对照 MIN_OTHER_FINGERS_EXTENDED。 */
+/** 其余三指（中指/无名指/小指）里伸直的数量。**只作诊断参考**：捏合已不要求它们伸直。 */
 const otherExtendedCount = (hand: Hand) =>
   extendedFingers(hand).filter((name) => name !== 'index').length
 
@@ -270,8 +290,17 @@ describe('夹具几何自洽性（FK 生成，角度与比值都可复算）', (
 
   it('半握拳捏合夹具：其余三指里正好两指伸直（中指/无名指 178°，小指 40° 蜷起）', () => {
     const hand = halfFistPinchHand()
-    expect(otherExtendedCount(hand)).toBe(MIN_OTHER_FINGERS_EXTENDED)
+    // 2 是旧 MIN_OTHER_FINGERS_EXTENDED 的边界值；该门槛已删除，这个数现在只是诊断量。
+    expect(otherExtendedCount(hand)).toBe(2)
     expect(pipAngleOf(hand, 17, 18, 20)).toBeLessThan(FINGER_EXTENSION_MIN_ANGLE_DEG - 60)
+  })
+
+  it('真人捏合夹具：食指 165° 伸直 + 两指尖精确贴合 + 其余三指全部自然弯曲（伸直数 0）', () => {
+    const hand = naturalPinchHand()
+    expect(pipAngleOf(hand, 5, 6, 8)).toBeCloseTo(165, 0)
+    expect(isExtended(hand, 5, 6, 8)).toBe(true)
+    expect(pinchRatioOf(hand)).toBeLessThan(0.01)
+    expect(otherExtendedCount(hand)).toBe(0)
   })
 })
 
@@ -288,12 +317,35 @@ describe('捏合判定（自定义几何 + 多帧平滑）', () => {
     expect(classifyGesture(landmarksOnly(halfFistPinchHand()))?.mode).toBe('birthday')
   })
 
-  it('伸直的手指不足两指时不判捏合，避免把蜷手误判成生日', () => {
-    const hand = singleOtherFingerPinchHand()
-    // 食指与中指仍是伸直的，判负只因为「其余三指伸直数 < 2」这条门槛。
+  it('【核心修复】其余手指自然弯曲（伸直数 0）的捏合仍然成立', () => {
+    const hand = naturalPinchHand()
+    // 先钉住夹具：食指确实是伸直的、两指确实贴合、其余三指确实一指都没伸直。
     expect(isExtended(hand, 5, 6, 8)).toBe(true)
-    expect(otherExtendedCount(hand)).toBe(MIN_OTHER_FINGERS_EXTENDED - 1)
-    expect(classifyGesture(landmarksOnly(hand))).toBeNull()
+    expect(pinchRatioOf(hand)).toBeLessThan(PINCH_ENTER_RATIO)
+    expect(otherExtendedCount(hand)).toBe(0)
+    // 单帧判定成立（这是旧判据下恒为 null 的那一帧）。
+    expect(classifyPinch(hand)?.mode).toBe('birthday')
+    expect(classifyGesture(landmarksOnly(hand))?.mode).toBe('birthday')
+    expect(classifyGesture(noneCategory(hand))?.mode).toBe('birthday')
+    // 产品路径是「每帧一次推理 + PinchSmoother 投票」，平滑后同样成立。
+    const smoother = new PinchSmoother()
+    const results = Array.from({ length: PINCH_WINDOW_FRAMES }, () => smoother.push(hand))
+    expect(results[results.length - 1]?.mode).toBe('birthday')
+  })
+
+  it('【核心修复】其余三指只有一指伸直也不再是否决理由', () => {
+    const hand = singleOtherFingerPinchHand()
+    expect(isExtended(hand, 5, 6, 8)).toBe(true)
+    expect(otherExtendedCount(hand)).toBe(1)
+    expect(classifyPinch(hand)?.mode).toBe('birthday')
+    expect(classifyGesture(landmarksOnly(hand))?.mode).toBe('birthday')
+  })
+
+  it('食指轻微弯曲（140°）+ 其余三指自然弯曲的捏合也成立', () => {
+    const hand = naturalPinchHand(140)
+    expect(pipAngleOf(hand, 5, 6, 8)).toBeCloseTo(140, 0)
+    expect(otherExtendedCount(hand)).toBe(0)
+    expect(classifyPinch(hand)?.mode).toBe('birthday')
   })
 
   it('握拳（四指蜷回掌心）不会被误判为捏合，即使拇指尖贴着食指尖', () => {
@@ -301,8 +353,50 @@ describe('捏合判定（自定义几何 + 多帧平滑）', () => {
     expect(classifyGesture(noneCategory(fistHand()))).toBeNull()
   })
 
+  it('【防误判】真握拳的三条实测证据：食指 PIP 40°、腕比值 0.864、捏合比值 0 —— classifyPinch 仍为 null', () => {
+    const hand = fistHand()
+    const indexPip = pipAngleOf(hand, 5, 6, 8)
+    const indexWristRatio = wristRatioOf(hand, 6, 8)
+    const ratio = pinchRatioOf(hand)
+    // 夹具证据（写在用例里，随实现漂移会立刻失败）：
+    expect(indexPip).toBeCloseTo(40, 0)
+    expect(indexPip).toBeLessThan(FINGER_EXTENSION_MIN_ANGLE_DEG - 60)
+    expect(indexWristRatio).toBeCloseTo(0.864, 3)
+    expect(indexWristRatio).toBeLessThanOrEqual(FINGER_EXTENSION_WRIST_RATIO)
+    // 拇指尖被刻意放在蜷起的食指尖上：捏合比值 ≈ 0，纵深防线只剩下食指伸直判据。
+    expect(ratio).toBeLessThan(0.01)
+    expect(otherExtendedCount(hand)).toBe(0)
+    // 因此：单帧判定、无平滑判定、多帧平滑、以及「模型不给类别」这条主路径，全部不成立。
+    expect(classifyPinch(hand)).toBeNull()
+    expect(classifyGesture(landmarksOnly(hand))).toBeNull()
+    expect(classifyGesture(noneCategory(hand))).toBeNull()
+    const smoother = new PinchSmoother()
+    const results = Array.from({ length: PINCH_WINDOW_FRAMES }, () => smoother.push(hand))
+    expect(results.every((result) => result === null)).toBe(true)
+  })
+
+  it('握拳与捏合的几何分界：只差食指伸直这一条，其它量完全相同', () => {
+    const fist = fistHand()
+    const natural = naturalPinchHand()
+    // 两者的「其余三指伸直数」都是 0 —— 所以它不可能充当分界线（旧判据正是错在这里）。
+    expect(otherExtendedCount(fist)).toBe(otherExtendedCount(natural))
+    // 真正的分界线：食指伸直（PIP 40° vs 165°、腕比值 0.864 vs 1.365）。
+    expect(isExtended(fist, 5, 6, 8)).toBe(false)
+    expect(isExtended(natural, 5, 6, 8)).toBe(true)
+    expect(classifyPinch(fist)).toBeNull()
+    expect(classifyPinch(natural)?.mode).toBe('birthday')
+  })
+
   it('展开手掌不会被误判为捏合', () => {
     expect(classifyGesture(landmarksOnly(openHand()))).toBeNull()
+  })
+
+  it('半握的手（食指半蜷 125°）+ 拇指尖贴上：仍不判捏合', () => {
+    const hand = naturalPinchHand(125)
+    expect(pipAngleOf(hand, 5, 6, 8)).toBeCloseTo(125, 0)
+    expect(isExtended(hand, 5, 6, 8)).toBe(false)
+    expect(pinchRatioOf(hand)).toBeLessThan(PINCH_ENTER_RATIO)
+    expect(classifyPinch(hand)).toBeNull()
   })
 
   it('握拳仍由模型类别判为猪头，捏合几何不会把它改成生日', () => {
@@ -427,6 +521,52 @@ describe('PinchSmoother 多帧平滑', () => {
   })
 })
 
+describe('校准页诊断（describeHand 只读导出）', () => {
+  it('真人捏合姿势：pinchObserved 成立、blockers 为空，其余三指伸直数如实显示为 0', () => {
+    const hand = describeHand(naturalPinchHand())
+    expect(hand).not.toBeNull()
+    if (!hand) return
+    expect(hand.pinchRatio).toBeLessThan(PINCH_ENTER_RATIO)
+    expect(hand.pinchZone).toBe('below-enter')
+    expect(hand.indexExtended).toBe(true)
+    expect(hand.otherExtended).toBe(0)
+    expect(hand.pinchObserved).toBe(true)
+    expect(hand.blockers).toEqual([])
+    // 「计入捏合判定」这一列现在只有食指是 true —— 页面不再显示一个已经不存在的门槛。
+    expect(hand.fingers.filter((finger) => finger.countsTowardPinch).map((finger) => finger.key)).toEqual(['index'])
+    expect(hand.thresholds.indexMinRatio).toBe(FINGER_EXTENSION_WRIST_RATIO)
+  })
+
+  it('握拳姿势：blockers 只指出食指这一条，不再出现「其余三指伸直数」这种已删除的门槛', () => {
+    const hand = describeHand(fistHand())
+    expect(hand).not.toBeNull()
+    if (!hand) return
+    expect(hand.pinchObserved).toBe(false)
+    expect(hand.blockers).toHaveLength(1)
+    expect(hand.blockers[0]).toContain('食指不伸直')
+    expect(hand.blockers[0]).toContain(`${FINGER_EXTENSION_MIN_ANGLE_DEG}°`)
+    expect(hand.blockers.join('；')).not.toContain('其余三指')
+    expect(hand.indexExtended).toBe(false)
+    expect(hand.otherExtended).toBe(0)
+  })
+
+  it('差一点成立时可以精确定位到食指 PIP 角这一条', () => {
+    const hand = describeHand(naturalPinchHand(125))
+    expect(hand).not.toBeNull()
+    if (!hand) return
+    const indexFinger = hand.fingers.find((finger) => finger.key === 'index')
+    expect(indexFinger?.pipAngleDeg).toBeCloseTo(125, 0)
+    // 腕比值仍然达标，所以瓶颈就在角度上（页面据此给出「放宽到多少度就能过」的建议）。
+    expect(indexFinger?.wristTipRatio).toBeGreaterThan(FINGER_EXTENSION_WRIST_RATIO)
+    expect(hand.blockers).toHaveLength(1)
+    expect(hand.blockers[0]).toContain('125.0°')
+  })
+
+  it('关键点不足 21 个时返回 null（此时产品侧本来也识别不到手势）', () => {
+    expect(describeHand(fistHand().slice(0, 12))).toBeNull()
+  })
+})
+
 describe('抖动抑制与误识别保护', () => {
   it('识别不到手势时不触发任何切换，画面保持当前样式', () => {
     const tracker = new GestureStabilityTracker()
@@ -438,18 +578,121 @@ describe('抖动抑制与误识别保护', () => {
     expect(second.status).toBe('unrecognized')
   })
 
-  it('短暂噪声（A → 识别不到 → B）不会误触发，持续做 B 才切换', () => {
+  it('短暂噪声（A → 识别不到 → B）不会误触发，且丢失的时间不计入保持时间', () => {
     const tracker = new GestureStabilityTracker()
     tracker.update(detected('galaxy'), 0)
     expect(tracker.update(detected('galaxy'), 700).trigger).toBe('galaxy')
 
     tracker.update(detected('pig'), 760)
+    /**
+     * 这一帧的 60ms 空档落在 LOSS_TOLERANCE_MS(150) 内，因此**不再清零**候选 —— 这正是本次
+     * 修复的目标行为（旧实现在这里清零，于是真人抖动几帧就永远攒不满 HOLD_MS）。
+     * 时间轴随之变化：候选起点 760、丢失 60ms，所以触发时刻 = 760 + HOLD_MS + 60 = 1520。
+     * 断言因此改成钉住「触发必须正好发生在真正识别到 HOLD_MS 的那一刻」，比原来更紧：
+     * 早 1ms 也不允许触发（丢失的时间没有被白送成保持时间）。
+     */
     tracker.update(null, 900)
     tracker.update(detected('pig'), 960)
-    // 噪声期间不得触发
     expect(tracker.update(detected('pig'), 1200).trigger).toBeNull()
-    expect(tracker.update(detected('pig'), 1580).trigger).toBeNull()
-    expect(tracker.update(detected('pig'), 1700).trigger).toBe('pig')
+
+    const lossMs = 960 - 900
+    expect(lossMs).toBeLessThanOrEqual(LOSS_TOLERANCE_MS)
+    const triggerAt = 760 + HOLD_MS + lossMs
+    expect(triggerAt).toBe(1520)
+    expect(tracker.update(detected('pig'), triggerAt - 1).trigger).toBeNull()
+    expect(tracker.update(detected('pig'), triggerAt).trigger).toBe('pig')
+  })
+
+  it('【核心修复】保持窗口内短暂丢失（1~2 帧 null）后仍能触发，且总时长真的达到 HOLD_MS', () => {
+    const tracker = new GestureStabilityTracker()
+    const start = tracker.update(detected('birthday'), 0)
+    expect(start.candidate).toBe('birthday')
+
+    // 200ms 处丢 2 帧（30fps 下约 66ms），300ms 处恢复。
+    const dropped = tracker.update(null, 200)
+    expect(dropped.status).toBe('unrecognized')
+    // 候选被保留（不再清零），但丢失的时间没有计入保持时间。
+    expect(dropped.candidate).toBe('birthday')
+    expect(dropped.progress).toBeCloseTo(200 / HOLD_MS, 5)
+
+    tracker.update(detected('birthday'), 300)
+    // 300ms 时真正识别到的时间只有 200ms。
+    const at300 = tracker.update(detected('birthday'), 300)
+    expect(at300.progress).toBeCloseTo(200 / HOLD_MS, 5)
+
+    // 丢失 100ms → 触发时刻 = 0 + HOLD_MS + 100 = 800。
+    expect(tracker.update(detected('birthday'), 799).trigger).toBeNull()
+    expect(tracker.update(detected('birthday'), 800).trigger).toBe('birthday')
+  })
+
+  it('【核心修复】反复抖动（每 4 帧掉 1 帧）不再让保持进度永远停在 0', () => {
+    const tracker = new GestureStabilityTracker()
+    let triggers = 0
+    // 100ms 一帧、每第 4 帧识别不到：改动前 6 秒内 progress 恒为 0.00、一次都不触发。
+    for (let frame = 0; frame <= 30; frame += 1) {
+      const result = tracker.update(frame % 4 === 3 ? null : detected('birthday'), frame * 100)
+      if (result.trigger) triggers += 1
+    }
+    expect(triggers).toBe(1)
+  })
+
+  it('【核心修复】丢失超过容忍窗口后回到旧行为：清零、重新计时', () => {
+    const tracker = new GestureStabilityTracker()
+    tracker.update(detected('pig'), 0)
+    // 第一帧丢失（t=100）：容忍窗口从这里开始算。
+    const firstDrop = tracker.update(null, 100)
+    expect(firstDrop.candidate).toBe('pig')
+    expect(firstDrop.progress).toBeCloseTo(100 / HOLD_MS, 5)
+
+    // 正好用满容忍窗口（丢失 150ms）：仍然保留，进度冻结在丢失开始那一刻。
+    const atLimit = tracker.update(null, 100 + LOSS_TOLERANCE_MS)
+    expect(atLimit.candidate).toBe('pig')
+    expect(atLimit.progress).toBeCloseTo(100 / HOLD_MS, 5)
+
+    // 超过容忍窗口 1ms：候选被清零，进度归零，完全回到改动前的行为。
+    const expired = tracker.update(null, 100 + LOSS_TOLERANCE_MS + 1)
+    expect(expired.status).toBe('unrecognized')
+    expect(expired.candidate).toBeNull()
+    expect(expired.progress).toBe(0)
+
+    // 之后重新计时：必须从「再次识别到」那一刻起重新攒满 HOLD_MS。
+    const restartAt = 1000
+    tracker.update(detected('pig'), restartAt)
+    expect(tracker.update(detected('pig'), restartAt + HOLD_MS - 1).trigger).toBeNull()
+    expect(tracker.update(detected('pig'), restartAt + HOLD_MS).trigger).toBe('pig')
+  })
+
+  it('容忍的丢失不会被算成抖动（不推高 streak / 不触发加罚时）', () => {
+    const tracker = new GestureStabilityTracker()
+    // 5 个来回的「识别到 100ms → 丢 50ms」，全部落在容忍窗口内：一次也不能记成候选更替。
+    let now = 0
+    for (let round = 0; round < 5; round += 1) {
+      const held = tracker.update(detected('birthday'), now)
+      expect(held.unstable).toBe(false)
+      now += 100
+      const dropped = tracker.update(null, now)
+      expect(dropped.candidate).toBe('birthday')
+      now += 50
+    }
+    // 累计识别到的时间 = 5 × 100 = 500ms < 700ms，所以还没触发。
+    expect(now).toBe(750)
+    expect(tracker.update(detected('birthday'), now).trigger).toBeNull()
+    expect(tracker.update(detected('birthday'), now + 200).trigger).toBe('birthday')
+  })
+
+  it('丢失期间的 candidate/progress 仍然如实上报（校准页据此观察保留状态）', () => {
+    const tracker = new GestureStabilityTracker()
+    tracker.update(detected('closing'), 0)
+    tracker.update(detected('closing'), 350)
+    const dropped = tracker.update(null, 400)
+    expect(dropped.status).toBe('unrecognized')
+    expect(dropped.candidate).toBe('closing')
+    expect(dropped.mode).toBeNull()
+    expect(dropped.trigger).toBeNull()
+    // 进度冻结在丢失开始那一刻（400 - 0 = 400ms），不会随着丢失继续增长。
+    expect(dropped.progress).toBeCloseTo(400 / HOLD_MS, 5)
+    const laterDrop = tracker.update(null, 500)
+    expect(laterDrop.progress).toBeCloseTo(400 / HOLD_MS, 5)
   })
 
   it('正常的手势切换在 700ms 保持窗口内立即触发，不被抖动抑制推迟', () => {

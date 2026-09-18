@@ -453,42 +453,47 @@ function App() {
               </div>
             </section>
 
-            <section
-              className={`stage stage-${currentMode}`}
-              aria-label={`${activeMode.label}动画预览`}
-              onWheel={handleStageWheel}
-              onPointerDown={handleStagePointerDown}
-              onPointerMove={handleStagePointerMove}
-              onPointerUp={handleStagePointerEnd}
-              onPointerCancel={handleStagePointerEnd}
-            >
-              <div className="stage-grid" aria-hidden="true" />
-              <div className="stage-halo" aria-hidden="true" />
-              <ParticleCanvas mode={currentMode} paused={paused} flow={galaxyFlow} onQualityChange={handleQualityChange} />
+            {/* 右列：舞台在上、摄像头预览与手势反馈在下，二者同宽。
+                摄像头因此完全在动画框之外，video 元素本身不变（手势识别仍从它取帧）。 */}
+            <div className="stage-column">
+              <section
+                className={`stage stage-${currentMode}`}
+                aria-label={`${activeMode.label}动画预览`}
+                onWheel={handleStageWheel}
+                onPointerDown={handleStagePointerDown}
+                onPointerMove={handleStagePointerMove}
+                onPointerUp={handleStagePointerEnd}
+                onPointerCancel={handleStagePointerEnd}
+              >
+                <div className="stage-grid" aria-hidden="true" />
+                <div className="stage-halo" aria-hidden="true" />
+                <ParticleCanvas mode={currentMode} paused={paused} flow={galaxyFlow} onQualityChange={handleQualityChange} />
+                {fallbackCopy && showFallback && (
+                  <CameraFallbackNotice copy={fallbackCopy} onDismiss={dismissFallback} />
+                )}
+                <div className="stage-caption">
+                  <span>{activeMode.label}</span>
+                  <span
+                    className="stage-quality"
+                    data-tier={quality.tier}
+                    data-motion={reducedMotion ? 'reduced' : 'full'}
+                  >
+                    {formatQualityLabel(quality.tier, quality.fps, reducedMotion)}
+                  </span>
+                  <span>{paused ? '已暂停' : 'LIVE'}</span>
+                </div>
+              </section>
+
               {cameraStatus === 'enabled' && cameraStream && (
-                <>
-                  <GestureFeedback state={gestureFeedback} />
+                <div className="camera-dock">
                   <div className="camera-preview">
                     <video ref={videoRef} autoPlay playsInline muted />
                     <span><Camera size={12} aria-hidden="true" /> 本地预览</span>
                   </div>
-                </>
+                  <GestureFeedback state={gestureFeedback} />
+                </div>
               )}
-              {fallbackCopy && showFallback && (
-                <CameraFallbackNotice copy={fallbackCopy} onDismiss={dismissFallback} />
-              )}
-              <div className="stage-caption">
-                <span>{activeMode.label}</span>
-                <span
-                  className="stage-quality"
-                  data-tier={quality.tier}
-                  data-motion={reducedMotion ? 'reduced' : 'full'}
-                >
-                  {formatQualityLabel(quality.tier, quality.fps, reducedMotion)}
-                </span>
-                <span>{paused ? '已暂停' : 'LIVE'}</span>
-              </div>
-            </section>
+            </div>
           </div>
 
           <nav className="mode-nav" aria-label="祝福模式">

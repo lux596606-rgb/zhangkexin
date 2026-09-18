@@ -73,6 +73,12 @@
   margin: 0 auto;
 }
 
+/* 体验页要装下"放大后的舞台 + 舞台外的摄像头预览"，因此比落地页更宽。
+   落地页保持原宽度，避免影响已经验收过的首屏布局。 */
+.experience {
+  width: min(1560px, calc(100% - 56px));
+}
+
 .landing {
   display: flex;
   flex-direction: column;
@@ -385,7 +391,8 @@
 .experience {
   display: flex;
   flex-direction: column;
-  padding: 24px 0 28px;
+  /* 底边距随视口高度收缩：短屏上把它省给舞台，长屏上保留呼吸感。 */
+  padding: 22px 0 clamp(12px, 2vh, 26px);
 }
 
 .topbar {
@@ -465,16 +472,28 @@
 .icon-button.is-active { border-color: rgba(255, 176, 158, 0.6); background: rgba(255, 171, 150, 0.12); color: #ffc0af; }
 .icon-button:disabled { cursor: not-allowed; opacity: 0.32; }
 
+/* 左文案 / 右舞台：文案列给固定上限（中文文案短，不需要更多宽度），
+   剩下的全部让给舞台；同时收掉原先 clamp(30px,7vw,112px) 那种会把画面挤小的超大列间距。 */
 .experience-grid {
   display: grid;
-  grid-template-columns: minmax(270px, 0.8fr) minmax(0, 1.2fr);
+  grid-template-columns: minmax(280px, 1fr) minmax(0, 2.05fr);
   align-items: center;
-  gap: clamp(30px, 7vw, 112px);
+  gap: clamp(24px, 3vw, 46px);
   flex: 1;
-  padding: clamp(38px, 7vh, 82px) 0 clamp(32px, 6vh, 70px);
+  min-height: 0;
+  padding: clamp(14px, 2.2vh, 34px) 0 clamp(10px, 1.6vh, 26px);
 }
 
-.scene-copy { min-width: 0; }
+.scene-copy { min-width: 0; max-width: 520px; }
+
+/* 右列：舞台与它下方的摄像头条同宽（舞台宽度公式只写一次）。 */
+.stage-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
 
 .scene-copy h1 {
   max-width: 540px;
@@ -514,7 +533,7 @@
 .control-button:hover { border-color: rgba(255, 177, 157, 0.5); background: rgba(255, 171, 150, 0.11); }
 .control-button-muted { color: rgba(253, 232, 224, 0.57); }
 
-.keyboard-guide { margin-top: 42px; padding-top: 20px; border-top: 1px solid rgba(255, 234, 226, 0.1); }
+.keyboard-guide { margin-top: 24px; padding-top: 16px; border-top: 1px solid rgba(255, 234, 226, 0.1); }
 
 .guide-heading {
   gap: 7px;
@@ -544,10 +563,18 @@ kbd {
   font-size: 0.61rem;
 }
 
+/* 舞台尺寸：宽度吃满右栏，但高度必须留得下顶栏 + 底部模式入口，
+   因此用「视口高度上限 + aspect-ratio」双约束，保证放大画面的同时首屏不出现滚动条。 */
 .stage {
   position: relative;
+  width: 100%;
+  /* 高度上限：视口高 − 340px（顶栏 + 舞台下方通栏 + 模式入口 + 内边距）。
+     视觉上舞台越大越好，但必须留得下它下面那两块，因此同时给一个下限，
+     避免矮屏把画面压得比原来还小。 */
+  max-width: clamp(560px, (100vh - 330px) * 1.34, 1040px);
+  aspect-ratio: 1.34;
+  justify-self: center;
   min-width: 0;
-  aspect-ratio: 1.22;
   overflow: hidden;
   border: 1px solid rgba(255, 234, 226, 0.14);
   border-radius: 4px;
@@ -600,11 +627,26 @@ kbd {
 .stage-closing .stage-halo { background: radial-gradient(circle, rgba(255, 195, 137, 0.25), rgba(255, 165, 130, 0.06) 46%, transparent 70%); }
 
 
+/* 摄像头预览 + 手势反馈：贴在舞台正下方、与舞台同宽，完全在动画框之外。 */
+.camera-dock {  display: flex;
+  align-items: stretch;
+  gap: 14px;
+  width: 100%;
+}
+
+.camera-dock .gesture-feedback {
+  position: static;
+  top: auto;
+  left: auto;
+  width: auto;
+  flex: 1;
+  z-index: auto;
+}
+
 .camera-preview {
-  position: absolute;
-  right: 24px;
-  bottom: 28px;
-  width: min(170px, 26%);
+  position: relative;
+  width: 132px;
+  flex: 0 0 auto;
   overflow: hidden;
   border: 1px solid rgba(255, 234, 226, 0.28);
   border-radius: 4px;
@@ -811,10 +853,10 @@ kbd {
 .stage-quality[data-motion='reduced'] { opacity: 0.7; color: #ffd0ab; }
 .is-paused .star { animation-play-state: paused; }
 
-.mode-nav { padding-top: 21px; border-top: 1px solid rgba(255, 234, 226, 0.1); }
+.mode-nav { padding-top: 14px; border-top: 1px solid rgba(255, 234, 226, 0.1); }
 .mode-nav-label { color: rgba(253, 232, 224, 0.48); font-size: 0.63rem; letter-spacing: 0.08em; }
 
-.mode-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.mode-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 9px; }
 
 .mode-tab {
   justify-content: flex-start;
