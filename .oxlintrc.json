@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "ignorePatterns": ["public/mediapipe/wasm/**"],
+  "ignorePatterns": ["public/mediapipe/wasm/**", "dist/**", "dist-calibration/**"],
   "plugins": ["react", "typescript", "oxc"],
   "rules": {
     "react/rules-of-hooks": "error",

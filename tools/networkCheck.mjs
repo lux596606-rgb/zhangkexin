@@ -64,6 +64,14 @@ try {
   console.log(`\n字体请求（本机 ${fonts.length} 个）:`)
   for (const url of [...new Set(fonts)]) console.log(`  ${url.replace(/^https?:\/\/[^/]+/, '')}`)
 
+  // 部署体积审计：浏览器实际请求了哪些大文件（未被请求的 wasm 变体就是纯粹的部署负担）
+  const heavy = internal.filter((url) => /\.(wasm|task|js|png)(\?|$)/i.test(url))
+  console.log(`\n=== 本机请求的脚本/模型/图片（${heavy.length} 个，用于部署体积审计）===`)
+  for (const url of [...new Set(heavy)].sort()) console.log(`  ${url.replace(/^https?:\/\/[^/]+/, '')}`)
+  const wasmRequested = [...new Set(heavy)].filter((url) => url.includes('wasm'))
+  console.log(`\n实际请求的 wasm 变体: ${wasmRequested.length === 0 ? '(无)' : ''}`)
+  for (const url of wasmRequested) console.log(`  ${url.replace(/^https?:\/\/[^/]+/, '')}`)
+
   // 页面里是否还有 css 变量指向外部字体
   const cssExternal = await evaluate(
     session,

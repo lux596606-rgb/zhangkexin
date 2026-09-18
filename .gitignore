@@ -14,6 +14,8 @@ dist-ssr
 
 # PM 验收工具产生的截图与临时产物（不入库）
 tmp-artifacts/
+# 手势校准页（任务8）的独立构建产物：只在本机用于真实摄像头校准，不入库、不部署
+dist-calibration/
 
 # Editor directories and files
 .vscode/*

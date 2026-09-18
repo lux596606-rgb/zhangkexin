@@ -37,7 +37,7 @@
 | 3 | 首次进入引导与状态反馈层：手势/键盘提示、降级与减少动效路径 | 3.1、8 | ✅ 验收通过 |
 | 4 | 文案与祝福内容定稿（主干四样式、落地页、状态用词与术语统一） | 3.5、5 | ✅ 验收通过（PM 追加修正 2 处） |
 | 5 | 兼容性与性能实测（Chrome/Edge/Safari，低性能设备降级）+ **真实摄像头校准捏合阈值** | 6、9.3.4 | 待规划 |
-| 6 | 发布准备：构建产物 + HTTPS 部署说明（等用户给服务器信息后可追加实际部署） | 9.3 | 待规划 |
+| 6 | 发布准备：构建产物 + HTTPS 部署说明（等用户给服务器信息后可追加实际部署） | 9.3 | ✅ 验收通过（43.07MB→20.79MB） |
 | 7 | 工程净化：字体自托管（去掉 Google Fonts 外链）、清理脚手架残留资源 | 6、7 | ✅ 验收通过 |
 
 ## 3. 验收记录
@@ -140,6 +140,27 @@
   - 确认删除的 4 个文件不再存在，而猪头参考图 / favicon / MediaPipe 模型均健在；全仓库字体外链零命中。
   - 粒子文字回归：生日快乐 bbox 209→213、祝福收束 483→477、中心区占比 83.9%→84.6%，均在基线段内。
 - 已知事实（非缺陷）：构建产物里残留一处 `googleapis.com` 字符串，来源是 `@mediapipe/tasks-vision` 依赖内部的日志端点与 protobuf type URL，与字体无关；实际影响很小（日志上报失败不影响识别）。若日后要彻底断外网，需单独评估。
+
+### 任务 6（发布准备：体积优化 + HTTPS 部署说明）
+- 派发时间：本次会话；覆盖文档条目 6、9.3
+- **PM 先行发现**：抓包发现 `dist` 43.07 MB，但浏览器只请求 `vision_wasm_internal.{js,wasm}` 一组，另外两组（`module_internal` + `nosimd_internal`）从未被请求 —— 22.28 MB 的纯部署负担。
+- 成果：
+  - 删除 4 个未被请求的 wasm 文件：**43.07 MB / 15 文件 → 20.79 MB / 11 文件**（实测复核一致）。
+  - `vite.config.ts` 设 `base: './'` —— 否则部署到子路径会整站白屏（`src/` 一行未改，`GestureController` 的 `BASE_URL` 拼接在相对 base 下依然正确）。
+  - 新增 `DEPLOY.md`（面向不懂运维的读者）：为何必须 HTTPS（安全上下文硬依赖）、上传 dist 内容而非目录、宝塔/nginx+certbot 两条路径、可直接抄的 Nginx 配置（含 **`application/wasm` MIME**、gzip、assets 长缓存 + index.html no-cache）、11 条上线自检清单、更新流程、FAQ。
+  - 新增 `npm run check:dist`（11 项产物检查）。
+- **PM 独立验收**：
+  - 从 MediaPipe 自己的 bundle 源码核实了删除依据（不是听汇报）：
+    `mj(a,b,c){ var d = await lj(c) ? "" : "_nosimd"; c = \`wasm${c?"_module":""}${d}_internal\` }`、
+    `forVisionTasks = function(a,b=!1){ return mj("vision", a??eh``, b) }`
+    → `useModule` 默认 `false`，本项目唯一调用点是单参数 → `_module` **确实不可达**；`d=""` 同时证明当前浏览器支持 SIMD。
+  - 复现构建：**20.79 MB / 11 文件**；`npm run check:dist` 11/11；lint 0/0；probe 17/17。
+  - `.oxlintrc.json` 新增 `dist/**`、`dist-calibration/**` 到 `ignorePatterns` 是合理的（构建产物不该被 lint，与既有 `public/mediapipe/wasm/**` 同类）。
+- **PM 追加修正两处**：
+  1. `public/favicon.svg` 一直在产物里，但 `index.html` **从未引用它** → 浏览器标签页没有图标，且会去请求不存在的 `/favicon.ico`。已加 `<link rel="icon" href="./favicon.svg">`（用相对路径，子路径部署同样有效）。
+  2. 「校准页」的独立构建产物 `dist-calibration/` 一度进入工作区（曾把 lint 顶到 1427 warnings），已加入 `.gitignore`（只在本机用于校准，不入库不部署）。
+- **取舍与风险（如实记录）**：删除 `nosimd` 变体意味着**不支持 SIMD 的老浏览器无法做手势识别**，但不白屏、键盘与鼠标可走完全程（需求 3.1 的降级路径）。恢复方法（从 `node_modules` 拷回 2 个文件重构建）已写入 `MEDIAPIPE_ASSETS.md`。
+- 已知的首次加载体积：11.21 MB（wasm）+ 8.0 MB（模型）= 约 19 MB 是首次进入体验才拉取的，需要在上线后实测真实网络的加载时间。
 
 ## 4. 项目当前快照
 

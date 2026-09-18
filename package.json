@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:calibration": "vite build --config vite.calibration.config.ts",
     "lint": "oxlint",
     "test": "vitest run",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:dist": "node scripts/checkDist.mjs"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.0.1",

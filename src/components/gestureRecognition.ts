@@ -14,7 +14,7 @@ export type GestureStatus =
  * 深度 z —— 捏合判定必须用得上它，否则手掌转向侧面（透视缩短）时所有平面距离
  * 都会被压缩，捏合比值随之失真。
  */
-type Landmark = {
+export type Landmark = {
   x: number
   y: number
   z?: number
@@ -294,6 +294,169 @@ export function classifyGesture(
   const landmarks = result.landmarks?.[0]
   if (!landmarks) return null
   return smoother ? smoother.push(landmarks) : classifyPinch(landmarks)
+}
+
+/**
+ * ======================= 只读诊断导出（校准页专用） =======================
+ *
+ * 下面这段是给 `calibration.html`（开发者/验收者用的手势自测校准页）准备的：它把上面
+ * 那几条私有判据（同一个 `isFingerExtended` / `jointAngleDeg` / `palmScaleOf`）的**中间量**
+ * 原样摊开，好让人对着真实摄像头看「到底是哪一条没通过」。
+ *
+ * 纪律：这里**只读**。它不缓存、不修改任何状态，也不参与 `classifyGesture` /
+ * `PinchSmoother` / `GestureStabilityTracker` 的判定路径，因此对产品行为零影响。
+ * 校准页必须复用这些量而不是自己抄一份实现 —— 否则校准的就是另一套假阈值了。
+ */
+export type FingerDiagnostics = {
+  /** 'thumb' | 'index' | 'middle' | 'ring' | 'pinky' —— 拇指的关键点与其他四指不同。 */
+  key: 'thumb' | 'index' | 'middle' | 'ring' | 'pinky'
+  label: string
+  /** 指根、中节、指尖的关键点下标（拇指为 CMC/MCP/IP/TIP）。 */
+  indices: readonly number[]
+  /** 腕-指尖 与 腕-中节(拇指为 MCP) 的三维距离之比；伸直要 > FINGER_EXTENSION_WRIST_RATIO。 */
+  wristTipRatio: number
+  /** 腕-指尖 与 腕-PIP 两个三维距离的原始值（便于判断抖动来自哪一端）。 */
+  wristTipDistance: number
+  wristPipDistance: number
+  /** MCP-PIP-TIP（拇指为 MCP-IP-TIP）的三点夹角，单位度。 */
+  pipAngleDeg: number
+  /** 与 `isFingerExtended()` 完全同一套判据给出的结果。 */
+  extended: boolean
+  /** 拇指不参与 `isFingerExtended`（它没有 PIP），这里标出来避免误读。 */
+  countsTowardExtension: boolean
+}
+
+export type HandDiagnostics = {
+  /** 掌尺度 = |腕 0 → 中指根 9| 的三维距离，捏合比值与所有相对量的分母。 */
+  palmScale: number
+  /** 拇指尖-食指尖的平面距离（`observePinch` 用的就是这个量）。 */
+  pinchDistance: number
+  /** 捏合比值 = 拇指尖-食指尖距离 / 掌尺度。 */
+  pinchRatio: number
+  /** 进入阈值（迟滞的高门槛）与退出阈值。 */
+  pinchEnterRatio: number
+  pinchExitRatio: number
+  /** pinchRatio 与两个阈值的关系：进入/迟滞区/退出。 */
+  pinchZone: 'below-enter' | 'hysteresis' | 'above-exit'
+  /** 食指是否伸直（防握拳的关键判据）。 */
+  indexExtended: boolean
+  /** 其余三指（中指/无名指/小指）里伸直的数量，以及要求的下限。 */
+  otherExtended: number
+  minOtherFingersExtended: number
+  /** 单帧捏合观测是否成立（几何 + 伸直判据全通过，未做多帧平滑）。 */
+  pinchObserved: boolean
+  /** 未通过的原因，按判据逐条给出，页面直接展示。 */
+  blockers: string[]
+  /** 五根手指的逐指明细（含拇指，仅作参考）。 */
+  fingers: FingerDiagnostics[]
+  /** 当前生效的阈值快照，来自本文件导出的常量，页面不再自己写一遍。 */
+  thresholds: {
+    wristRatio: number
+    minAngleDeg: number
+    indexMinRatio: number
+  }
+}
+
+/** 五指的 (MCP, PIP, TIP) 下标；拇指用 (CMC, MCP, IP, TIP) 各自的含义单独处理。 */
+const fingerLayout = [
+  { key: 'thumb', label: '拇指', indices: [1, 2, 3, 4] },
+  { key: 'index', label: '食指', indices: [5, 6, 7, 8] },
+  { key: 'middle', label: '中指', indices: [9, 10, 11, 12] },
+  { key: 'ring', label: '无名指', indices: [13, 14, 15, 16] },
+  { key: 'pinky', label: '小指', indices: [17, 18, 19, 20] },
+] as const
+
+/**
+ * 诊断层的「伸直」：与私有 `isFingerExtended()` 共用同两个条件，但把中间量一并带出来。
+ * 拇指在真实判定里从不参与（它没有 PIP），这里用同一套条件算一遍仅供对照参考。
+ */
+function fingerDiagnostics(landmarks: readonly Landmark[], finger: (typeof fingerLayout)[number]): FingerDiagnostics {
+  const [mcpIndex, pipIndex, , tipIndex] = finger.indices
+  const wrist = landmarks[0]
+  const mcp = landmarks[mcpIndex]
+  const pip = landmarks[pipIndex]
+  const tip = landmarks[tipIndex]
+
+  const wristTipDistance = distance3d(wrist, tip)
+  const wristPipDistance = distance3d(wrist, pip)
+  const wristTipRatio = wristPipDistance > 1e-6 ? wristTipDistance / wristPipDistance : 0
+  const pipAngleDeg = jointAngleDeg(mcp, pip, tip)
+
+  return {
+    key: finger.key,
+    label: finger.label,
+    indices: finger.indices,
+    wristTipRatio,
+    wristTipDistance,
+    wristPipDistance,
+    pipAngleDeg,
+    extended: wristTipRatio > FINGER_EXTENSION_WRIST_RATIO && pipAngleDeg >= FINGER_EXTENSION_MIN_ANGLE_DEG,
+    countsTowardExtension: finger.key !== 'thumb',
+  }
+}
+
+/**
+ * 把一帧关键点翻译成「人话诊断」：每个用来判定的量都带出来，外加结论与阻塞原因。
+ * 关键点不足 21 个（或没检测到手）时返回 null —— 此时产品侧本来也识别不到手势。
+ */
+export function describeHand(landmarks: readonly Landmark[]): HandDiagnostics | null {
+  if (landmarks.length < 21) return null
+  const wrist = landmarks[0]
+  const thumbTip = landmarks[4]
+  const indexTip = landmarks[8]
+  const middleBase = landmarks[9]
+  if (!wrist || !thumbTip || !indexTip || !middleBase) return null
+
+  const fingers = fingerLayout.map((finger) => fingerDiagnostics(landmarks, finger))
+  const byKey = (key: FingerDiagnostics['key']) => fingers.find((finger) => finger.key === key) as FingerDiagnostics
+  const indexFinger = byKey('index')
+
+  const palmScale = palmScaleOf(landmarks)
+  const pinchDistance = distance(thumbTip, indexTip)
+  const pinchRatio = pinchDistance / palmScale
+  // 结论必须来自真实的判定路径：observePinch 与产品每帧用的是同一个函数。
+  const observation = observePinch(landmarks)
+  const indexExtended = observation?.indexExtended ?? false
+  const otherExtended = observation?.otherExtended ?? 0
+
+  /**
+   * 逐条列出「差一点才成立」的原因：只有在两指距离已经进入阈值、而完整判据没通过时才有意义
+   * —— 距离不达标时就谈不上是哪条伸直判据挡住的（那是「手还没捏上」，不是阈值问题）。
+   */
+  const blockers: string[] = []
+  if (pinchRatio <= PINCH_ENTER_RATIO && !(observation?.pinch ?? false)) {
+    if (!indexExtended) {
+      blockers.push(
+        `食指不伸直：腕-指尖/腕-PIP ${indexFinger.wristTipRatio.toFixed(3)}（需 > ${FINGER_EXTENSION_WRIST_RATIO}）、PIP ${indexFinger.pipAngleDeg.toFixed(1)}°（需 ≥ ${FINGER_EXTENSION_MIN_ANGLE_DEG}°）`,
+      )
+    }
+    if (otherExtended < MIN_OTHER_FINGERS_EXTENDED) {
+      blockers.push(`其余三指只有 ${otherExtended} 指伸直（需 ≥ ${MIN_OTHER_FINGERS_EXTENDED}）`)
+    }
+  }
+
+  const pinchZone: HandDiagnostics['pinchZone'] =
+    pinchRatio <= PINCH_ENTER_RATIO ? 'below-enter' : pinchRatio <= PINCH_EXIT_RATIO ? 'hysteresis' : 'above-exit'
+
+  return {
+    palmScale,
+    pinchDistance,
+    pinchRatio,
+    pinchEnterRatio: PINCH_ENTER_RATIO,
+    pinchExitRatio: PINCH_EXIT_RATIO,
+    pinchZone,
+    indexExtended,
+    otherExtended,
+    minOtherFingersExtended: MIN_OTHER_FINGERS_EXTENDED,
+    pinchObserved: observation?.pinch ?? false,
+    blockers,
+    fingers,
+    thresholds: {
+      wristRatio: FINGER_EXTENSION_WRIST_RATIO,
+      minAngleDeg: FINGER_EXTENSION_MIN_ANGLE_DEG,
+      indexMinRatio: INDEX_EXTENSION_MIN_RATIO,
+    },
+  }
 }
 
 export type GestureTrackerResult = {

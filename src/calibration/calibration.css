@@ -1,0 +1,361 @@
+/**
+ * 校准页样式：刻意从简 —— 能看清数值、能一眼看到红色结论就够了，
+ * 不做产品级视觉，也不引用产品页的 App.css（两页彻底隔离）。
+ */
+
+:root {
+  color-scheme: dark;
+  font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #0d1017;
+  color: #e6e9f2;
+}
+
+/**
+ * 诊断页里到处是长标识符（FINGER_EXTENSION_WRIST_RATIO、PINCH_ENTER_RATIO…）。
+ * 不加这一条它们会把卡片撑爆、把后面的中文说明挤出可视区 —— 校准页要让不懂代码的人
+ * 也能读完结论，所以统一允许在任意位置断行。
+ */
+.cal-page {
+  overflow-wrap: anywhere;
+}
+
+.cal-page code,
+.cal-page strong {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.cal-page {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 20px 20px 60px;
+}
+
+.cal-header h1 {
+  margin: 0 0 6px;
+  font-size: 22px;
+}
+
+.cal-sub,
+.cal-privacy {
+  margin: 4px 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #aab3c6;
+}
+
+.cal-privacy {
+  color: #9ad6a6;
+}
+
+.cal-privacy strong {
+  color: #d6ffe0;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.cal-card {
+  border: 1px solid #263041;
+  border-radius: 8px;
+  background: #141a24;
+  padding: 12px 14px;
+}
+
+.cal-card-wide {
+  grid-column: 1 / -1;
+}
+
+/**
+ * 版面分工（桌面宽度下 3 栏）：
+ * - 摄像头预览与「自动诊断结论」各占 1 栏 → 预览大得能看清手，结论文字有整整 2 栏宽度；
+ * - 四个数值/保持/滚动小卡各占 2 栏 → 中文字不会挤成一条竖线。
+ */
+.cal-camera {
+  grid-column: span 1;
+}
+
+.cal-verdict {
+  grid-column: span 2;
+}
+
+.cal-card-half {
+  grid-column: span 2;
+}
+
+@media (max-width: 900px) {
+  .cal-camera,
+  .cal-verdict,
+  .cal-card-half {
+    grid-column: 1 / -1;
+  }
+}
+
+.cal-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #8fb7ff;
+  margin-bottom: 8px;
+}
+
+.cal-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.cal-button {
+  border: 1px solid #3c62a8;
+  border-radius: 6px;
+  background: #24406e;
+  color: #eaf1ff;
+  font-size: 13px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.cal-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.cal-button-ghost {
+  background: #1b2230;
+  border-color: #37415a;
+}
+
+.cal-badge {
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #1d2634;
+  border: 1px solid #2f3a4d;
+  color: #b9c3d6;
+}
+
+.cal-badge-running,
+.cal-badge-ready {
+  color: #9ad6a6;
+  border-color: #2f5c3a;
+}
+
+.cal-badge-error,
+.cal-badge-failed {
+  color: #ff9d9d;
+  border-color: #6b2c2c;
+}
+
+.cal-badge-ok {
+  color: #9ad6a6;
+  border-color: #2f5c3a;
+}
+
+.cal-badge-warn {
+  color: #ffd28a;
+  border-color: #6b5424;
+}
+
+.cal-error {
+  color: #ff9d9d;
+  font-size: 12px;
+  margin: 8px 0 0;
+}
+
+.cal-video-wrap {
+  position: relative;
+  margin: 10px 0;
+  background: #0a0d13;
+  border: 1px solid #263041;
+  border-radius: 6px;
+  min-height: 200px;
+}
+
+.cal-video {
+  display: block;
+  width: 100%;
+  max-height: 320px;
+  object-fit: cover;
+  /* 与产品页一致：镜像显示（像照镜子）。MediaPipe 拿到的仍是原始帧，坐标不受影响。 */
+  transform: scaleX(-1);
+}
+
+.cal-video-hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: #7f8aa1;
+}
+
+.cal-kv {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2px;
+}
+
+.cal-kv > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  padding: 2px 0;
+  border-bottom: 1px dotted #232c3a;
+}
+
+.cal-kv dt {
+  color: #97a2b8;
+  /* 允许在长标识符中间断行，否则会把数值列挤出卡片（见 .cal-page 的说明）。 */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.cal-kv dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #eef3ff;
+  text-align: right;
+}
+
+.cal-verdict-line {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.5;
+  margin: 4px 0 8px;
+}
+
+.cal-verdict-ok {
+  color: #8ff0a8;
+}
+
+.cal-verdict-warn {
+  color: #ffd28a;
+}
+
+.cal-verdict-bad {
+  color: #ff9d9d;
+}
+
+.cal-verdict-idle {
+  color: #b9c3d6;
+}
+
+.cal-verdict-detail {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #cfd7e6;
+}
+
+.cal-hold {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: #aab3c6;
+}
+
+.cal-hold progress {
+  width: 140px;
+}
+
+.cal-hold strong {
+  color: #eef3ff;
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-note {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #97a2b8;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.cal-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.cal-table th,
+.cal-table td {
+  border-bottom: 1px solid #232c3a;
+  padding: 5px 6px;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+.cal-table th {
+  color: #97a2b8;
+  font-weight: 500;
+}
+
+.cal-ok {
+  color: #8ff0a8;
+}
+
+.cal-no {
+  color: #ff9d9d;
+}
+
+.cal-summary {
+  margin: 10px 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #cfd7e6;
+}
+
+.cal-report {
+  width: 100%;
+  box-sizing: border-box;
+  background: #0a0d13;
+  color: #cfe3ff;
+  border: 1px solid #263041;
+  border-radius: 6px;
+  font-family: Consolas, 'Cascadia Mono', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 8px;
+  resize: vertical;
+}
+
+.cal-steps {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.8;
+  color: #cfd7e6;
+}
+
+progress {
+  appearance: none;
+  height: 8px;
+  border-radius: 4px;
+  background: #1d2634;
+}
+
+progress::-webkit-progress-bar {
+  background: #1d2634;
+  border-radius: 4px;
+}
+
+progress::-webkit-progress-value {
+  background: #4d80d8;
+  border-radius: 4px;
+}
