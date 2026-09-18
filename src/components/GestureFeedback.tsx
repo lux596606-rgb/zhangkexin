@@ -15,7 +15,7 @@ const modeLabels: Record<GestureMode, string> = {
   closing: '祝福收束',
 }
 
-/** 与键盘 1/2/3/4 一致的手势入口编号，让使用者一眼对上提示。 */
+/** 与键盘 1 / 2 / 3 / 4 一致的手势入口编号，让使用者一眼对上提示。 */
 const modeKeys: Record<GestureMode, string> = {
   galaxy: '1',
   birthday: '2',
@@ -40,8 +40,10 @@ type FeedbackCopy = {
 
 /**
  * 七种状态的文案，与 GestureStatus 一一对应：
- * idle 未启动 / loading 加载中 / ready 等待手势 / holding 保持中（进度）/
- * recognized 已触发 / unrecognized 识别不到 / unavailable 不可用。
+ * idle 未启动 / loading 加载中 / ready 已识别 / holding 保持中（进度）/
+ * recognized 已触发 / unrecognized 没识别到 / unavailable 不可用。
+ * 标签与 App 顶部状态行（gestureLabel）逐字一致：同一个状态全站只有一个名字。
+ * 键盘一律写「键盘 1 / 2 / 3 / 4」，与落地页引导、降级提示保持同一种空格风格。
  */
 function copyFor(state: GestureFeedbackState): FeedbackCopy {
   const modeLabel = state.mode ? modeLabels[state.mode] : ''
@@ -52,7 +54,7 @@ function copyFor(state: GestureFeedbackState): FeedbackCopy {
         status: state.status,
         label: '手势未启动',
         mode: null,
-        hint: '开启摄像头即可用手势切换，键盘 1/2/3/4 始终可用',
+        hint: '开启摄像头即可用手势切换，键盘 1 / 2 / 3 / 4 始终可用',
         showProgress: false,
         showConfidence: false,
       }
@@ -72,7 +74,7 @@ function copyFor(state: GestureFeedbackState): FeedbackCopy {
         mode: state.mode,
         hint: state.unstable
           ? `手再稳一点，保持 ${holdSeconds} 秒就切换`
-          : `保持 ${holdSeconds} 秒，就会切到「${modeLabel}」`,
+          : `保持一下，就会切到「${modeLabel}」`,
         showProgress: true,
         showConfidence: true,
       }
@@ -97,9 +99,9 @@ function copyFor(state: GestureFeedbackState): FeedbackCopy {
     case 'unrecognized':
       return {
         status: state.status,
-        label: '等待手势',
+        label: '未识别到手势',
         mode: null,
-        hint: '张开手掌 / 捏合 / 握拳 / 竖拇指，保持一下即可切换',
+        hint: '张开手掌 / 捏合 / 握拳 / 竖拇指，保持一下就能切换',
         showProgress: false,
         showConfidence: false,
       }
@@ -108,7 +110,7 @@ function copyFor(state: GestureFeedbackState): FeedbackCopy {
         status: state.status,
         label: '手势识别不可用',
         mode: null,
-        hint: '键盘 1/2/3/4 与鼠标点选仍然完全可用',
+        hint: '键盘 1 / 2 / 3 / 4 与鼠标点选仍然完全可用',
         showProgress: false,
         showConfidence: false,
       }

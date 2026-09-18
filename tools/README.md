@@ -26,5 +26,7 @@
 ## 已知环境细节
 
 - `--headless=new` 下 rAF 不受 vsync 限制，会跑到 200~300fps，属正常；不要把它误判成性能问题。
-- `index.css` 从 `fonts.googleapis.com` 取字体，无外网时会回退系统字体，不影响形状判断。
+- `index.css` 与 `src/components/particleShapes.ts` 的 canvas 字体栈必须**逐项一致**，否则粒子字形与页面文字会不同源。
+- 字体已自托管（`src/assets/fonts/`：Manrope 可变 + DM Mono 400，约 40KB），中文走系统字体栈；
+  页面不依赖任何外网请求，可用 `node tools/networkCheck.mjs <url>` 复核（判据：外网请求数必须为 0）。
 - 断言"元素存在/类名切换"只能证明接线正确，**不能证明画面正确**，必须结合 `where.mjs` 的能量图与截图。

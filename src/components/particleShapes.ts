@@ -60,7 +60,9 @@ export function sampleText(lines: string[], width: number, height: number, color
   context.fillStyle = '#ffffff'
   context.textAlign = 'center'
   context.textBaseline = 'middle'
-  context.font = `600 ${fontSize}px "Noto Sans SC", "Microsoft YaHei", sans-serif`
+  // 字体栈必须与 index.css 的 :root 逐项保持一致（canvas 读不到 CSS 变量，只能写字面量）：
+  // 拉丁用自托管 Manrope、中文用系统字体，粒子字形才会与页面文字同源。
+  context.font = `600 ${fontSize}px "Manrope", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", "Segoe UI", sans-serif`
   const start = height / 2 - ((lines.length - 1) * lineHeight) / 2
   lines.forEach((line, index) => context.fillText(line, width / 2, start + index * lineHeight))
 

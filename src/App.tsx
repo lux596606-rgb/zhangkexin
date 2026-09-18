@@ -33,6 +33,7 @@ type Mode = {
   kicker: string
   title: string
   message: string
+  /** 画面这一刻的样子：四段同一层级、同一语气，只说看见什么，不解释怎么实现。 */
   detail: string
 }
 
@@ -44,7 +45,7 @@ const modes: Mode[] = [
     kicker: '01 / STARFIELD',
     title: '让星光先替我说声生日快乐',
     message: '愿新的一岁，日子像银河一样明亮自在。',
-    detail: '星尘自由流动中',
+    detail: '星尘正缓缓流动',
   },
   {
     id: 'birthday',
@@ -53,7 +54,7 @@ const modes: Mode[] = [
     kicker: '02 / WISH TEXT',
     title: '生日快乐，张珂欣',
     message: '愿你每天开心，学习顺利，也越来越聪明。',
-    detail: '祝福文字已点亮',
+    detail: '粒子聚成了祝福文字，正轻轻呼吸',
   },
   {
     id: 'pig',
@@ -62,7 +63,7 @@ const modes: Mode[] = [
     kicker: '03 / PINK CONSTELLATION',
     title: '一颗可爱的粉色星座',
     message: '把今天的好心情，收进这颗软乎乎的星星里。',
-    detail: '粒子已采样猪头轮廓与主要色块',
+    detail: '粒子拼出了猪头轮廓，腮红也亮着',
   },
   {
     id: 'closing',
@@ -71,7 +72,7 @@ const modes: Mode[] = [
     kicker: '04 / WARM FINALE',
     title: '生日快乐，张珂欣',
     message: '愿你被温柔照亮，也一直保留自己的可爱。',
-    detail: '星光正在聚拢',
+    detail: '星光正慢慢聚拢',
   },
 ]
 
@@ -265,22 +266,23 @@ function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [handleStart, selectMode, started])
 
+  // 状态行与反馈条（GestureFeedback）用同一套说法：每个状态全站只有一个名字。
   const cameraLabel: Record<CameraStatus, string> = {
     idle: '摄像头未开启',
     requesting: '摄像头授权中',
     enabled: '摄像头已开启',
-    denied: '摄像头未开启 · 权限未授予',
-    unavailable: '摄像头未开启 · 未找到设备',
-    unsupported: '摄像头未开启 · 浏览器不支持',
-    error: '摄像头未开启 · 设备暂不可用',
-    closed: '摄像头未开启 · 已关闭',
+    denied: '摄像头未开启 · 这次先跳过',
+    unavailable: '摄像头未开启 · 没有找到摄像头',
+    unsupported: '摄像头未开启 · 这个浏览器打不开它',
+    error: '摄像头未开启 · 这次没能打开',
+    closed: '摄像头未开启 · 已经先收起来了',
   }
 
   const gestureLabel: Record<GestureStatus, string> = {
-    idle: '手势识别未启动',
+    idle: '手势未启动',
     loading: '手势识别加载中',
-    ready: '等待手势',
-    holding: '请保持当前手势',
+    ready: '已识别手势',
+    holding: '保持一下就会切换',
     recognized: '手势已触发',
     unrecognized: '未识别到手势',
     unavailable: '手势识别不可用 · 可用键盘或鼠标',
@@ -320,12 +322,12 @@ function App() {
         <main className="landing" aria-labelledby="landing-title">
           <div className="landing-topline">
             <span className="signal-dot" />
-            <span>10.11 · A SMALL UNIVERSE FOR YOU</span>
+            <span>10.11 · A SMALL BIRTHDAY UNIVERSE FOR YOU</span>
           </div>
           <div className="landing-content">
             <div className="landing-copy">
               <p className="eyebrow">A BIRTHDAY CONSTELLATION</p>
-              <h1 id="landing-title">张珂欣<span>，生日快乐</span></h1>
+              <h1 id="landing-title">张珂欣<i className="hero-punctuation">，</i><span>生日快乐</span></h1>
               <p className="landing-message">
                 送你一片可以自由探索的星光。愿新的一岁，开心常在，学习顺利，也越来越聪明。
               </p>
@@ -338,7 +340,7 @@ function App() {
               </div>
               <div className="privacy-note">
                 <ShieldCheck size={16} aria-hidden="true" />
-                <span>摄像头只在本地预览，不上传画面；拒绝授权也能完整浏览。</span>
+                <span>摄像头只在本地预览，不上传画面；不打开摄像头也能完整浏览。</span>
               </div>
             </div>
             <div className="landing-orbit" aria-hidden="true">
@@ -346,14 +348,14 @@ function App() {
               <div className="orbit orbit-inner" />
               <div className="orbit-core"><Sparkles size={26} /></div>
               <span className="orbit-label orbit-label-top">FOR KEXIN</span>
-              <span className="orbit-label orbit-label-bottom">SOFT LIGHT / 10.11</span>
+              <span className="orbit-label orbit-label-bottom">SOFT LIGHT · 10.11</span>
             </div>
           </div>
           <GestureGuide />
           <footer className="landing-footer">
             <span>一份轻轻放在夜空里的祝福</span>
             <span className="footer-rule" />
-            <span>键盘 1 / 2 / 3 / 4 可切换星图</span>
+            <span>键盘 1 / 2 / 3 / 4 切换四种画面</span>
           </footer>
         </main>
       ) : (
@@ -434,7 +436,7 @@ function App() {
                   title="回到银河态"
                 >
                   <RotateCcw size={16} aria-hidden="true" />
-                  回到银河
+                  回到银河态
                 </button>
               </div>
 
@@ -490,7 +492,7 @@ function App() {
           </div>
 
           <nav className="mode-nav" aria-label="祝福模式">
-            <div className="mode-nav-label">选择一束星光</div>
+            <div className="mode-nav-label">挑一束星光</div>
             <div className="mode-tabs">
               {modes.map((mode) => (
                 <button

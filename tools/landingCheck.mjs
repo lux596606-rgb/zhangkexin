@@ -76,6 +76,21 @@ try {
     writeFileSync(`${ARTIFACT_DIR}\\landing-guide-zoom.png`, Buffer.from(data, 'base64'))
     console.log(`\n引导区放大截图: ${ARTIFACT_DIR}\\landing-guide-zoom.png`)
   }
+
+  // 主标题区域放大：确认「，」没有孤立成行
+  const heroClip = await evaluate(
+    session,
+    `(() => { const h = document.querySelector('#landing-title'); if (!h) return null;
+      const r = h.getBoundingClientRect(); const pad = 14;
+      return { x: Math.max(0, r.x - pad), y: Math.max(0, r.y - pad), width: r.width + pad * 2, height: r.height + pad * 2 }; })()`,
+  )
+  const heroText = await evaluate(session, `document.querySelector('#landing-title')?.textContent ?? null`)
+  console.log(`主标题文本: ${JSON.stringify(heroText)}`)
+  if (heroClip) {
+    const { data } = await session.send('Page.captureScreenshot', { format: 'png', clip: { ...heroClip, scale: 1.8 } })
+    writeFileSync(`${ARTIFACT_DIR}\\landing-hero-zoom.png`, Buffer.from(data, 'base64'))
+    console.log(`主标题放大截图: ${ARTIFACT_DIR}\\landing-hero-zoom.png`)
+  }
 } catch (error) {
   console.log(`失败: ${error.message}`)
 } finally {

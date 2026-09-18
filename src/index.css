@@ -1,7 +1,32 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap');
+/*
+ * 字体自托管：只保留实际用到的拉丁/数字字形，运行期零外网请求（原 Google Fonts @import 已移除）。
+ * Manrope 是可变字体，单个文件覆盖 200~800 字重（页面用到 400 正文 / 600 标题 / 700 主按钮）；
+ * DM Mono 全站只用 400（小字号编号、FPS 标记），因此只放一个静态字重。
+ * 中文不由自托管提供：CJK 字体单字重就有 1~2MB，中文一律走系统字体栈（见下方 :root）。
+ */
+@font-face {
+  font-family: 'Manrope';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('./assets/fonts/manrope-latin-var.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'DM Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./assets/fonts/dm-mono-latin-400.woff2') format('woff2');
+}
 
 :root {
-  font-family: 'Manrope', 'Noto Sans SC', 'Segoe UI', sans-serif;
+  /*
+   * 拉丁与数字命中自托管的 Manrope，中文按 mac 苹方 -> Windows 雅黑 的顺序命中系统字体。
+   * 这个中文优先级必须与 particleShapes.ts 里 canvas 的字体栈逐项一致，
+   * 否则粒子采样出的字形（粒子字）与页面文字会来自不同字体。
+   */
+  font-family: 'Manrope', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', 'Segoe UI', sans-serif;
   color: #f9f1ee;
   background: #090b16;
   font-synthesis: none;

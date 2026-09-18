@@ -151,6 +151,12 @@
   color: #f6beb2;
 }
 
+/* 逗号必须留在「张珂欣」这一行的末尾。若它作为独立 block 的起始字符，
+   浏览器的 CJK 避头尾规则会把它挤到单独一行，页面上就会出现一个孤立的「，」。 */
+.landing h1 .hero-punctuation {
+  font-style: normal;
+}
+
 .landing-message {
   max-width: 520px;
   margin-top: 30px;
@@ -798,7 +804,7 @@ kbd {
 .stage-caption span:first-child { color: #f4b3a3; }
 
 /* 画质/FPS 标记：默认极低调，只在自动降级或掉帧时才稍稍显形，不影响阅读。 */
-.stage-quality { opacity: 0.28; font-family: 'DM Mono', ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.57rem; font-variant-numeric: tabular-nums; transition: opacity 360ms ease; }
+.stage-quality { opacity: 0.55; font-family: 'DM Mono', ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.62rem; font-variant-numeric: tabular-nums; transition: opacity 360ms ease; }
 .stage-quality[data-tier='medium'] { opacity: 0.5; color: rgba(255, 214, 190, 0.85); }
 .stage-quality[data-tier='low'] { opacity: 0.72; color: #ffb59f; }
 /* 「减少动效」是使用者的偏好，不是设备性能：多一个短标记 + 偏暖的色，和自动降档区分开。 */
