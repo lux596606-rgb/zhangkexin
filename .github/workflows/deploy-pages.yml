@@ -1,0 +1,76 @@
+# 推送到 main 后自动构建 dist/ 并发布到 GitHub Pages。
+# 线上地址：https://lux596606-rgb.github.io/zhangkexin/
+#
+# 为什么必须有这个流程：仓库根目录的 index.html 是 Vite 的开发入口
+# （<script src="/src/main.tsx">），它只能配合 `npm run dev` 使用。
+# 把分支根目录直接当站点发布，浏览器会去请求 /src/main.tsx（404）→ 白屏。
+# 真正能跑的是 `npm run build` 产出的 dist/，本流程负责构建并发布它。
+name: 部署到 GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一时间只跑一个发布；新推送会取消进行中的旧发布
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      - name: 安装 Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 构建产物
+        run: npm run build
+
+      - name: 产物完整性检查
+        run: npm run check:dist
+
+      - name: 把 Pages 发布源切换为 GitHub Actions
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -sS -X PUT \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/pages" \
+            -d '{"build_type":"workflow"}'
+
+      - name: 配置 Pages
+        uses: actions/configure-pages@v6
+
+      - name: 上传产物
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 发布到 GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
