@@ -388,3 +388,48 @@ A：不需要。`dist/` 是纯静态文件，服务器只要能把文件按原�
 
 **Q：手机上能看吗？**
 A：首版只针对 Windows / macOS 电脑（需求 §9.3.3）。手机浏览器可能布局错乱或无法使用摄像头，属于已知范围。
+
+---
+
+## 8. 另一条路：GitHub Pages（已配好，推送即上线）
+
+> 这条路**不需要服务器、不需要域名、不需要自己申请证书**，而且天生就是 HTTPS（摄像头能直接授权）。
+> 如果只是想先有个能打开、能发给别人看的网址，用这条最省事；第 1~7 节是「放到朋友服务器上」的做法，两者可以并存。
+
+| 事项 | 说明 |
+| --- | --- |
+| 线上地址 | <https://lux596606-rgb.github.io/zhangkexin/> |
+| 仓库地址 | <https://github.com/lux596606-rgb/zhangkexin> |
+| 发布方式 | 推送到 `main` → GitHub Actions 自动 `npm ci` / `npm run build` / `npm run check:dist` → 发布 `dist/` |
+| 工作流文件 | `.github/workflows/deploy-pages.yml` |
+| 查看构建 | 仓库 **Actions** 页 → 左侧「部署到 GitHub Pages」 |
+
+### 8.1 为什么不能直接把分支根目录当站点（白屏的真正原因）
+
+仓库根目录的 `index.html` 是 **Vite 的开发入口**，第 13 行是：
+
+```html
+<script type="module" src="/src/main.tsx"></script>
+```
+
+把分支根目录直接当站点发布时，浏览器会去请求 `/src/main.tsx`：线上没有这个文件 → **404 → 白屏**。
+（DevTools 的 Network 里就是一条 `main.tsx 404`，`Initiator` 指向 `index.html` 第 13 行。）
+
+真正能跑的是 `npm run build` 产出的 `dist/`，所以发布源**必须**是 GitHub Actions：
+
+> 仓库 **Settings → Pages → Build and deployment → Source** 选 **`GitHub Actions`**（一个下拉框）。
+> 这个设置只能用管理员的网页改：工作流里的 `GITHUB_TOKEN` 调用 `PUT /repos/{owner}/{repo}/pages` 会返回
+> `403 Resource not accessible by integration`，所以自动切换做不到，必须手点一次。
+
+### 8.2 日常更新（改完代码怎么上线）
+
+```bash
+git add -A
+git commit -m "这次改了什么"
+git push                 # 推上去即自动重新构建并发布，通常 1~2 分钟
+```
+
+- **手动重跑**：Actions → 选中「部署到 GitHub Pages」→ **Re-run all jobs**（工作流也支持 `workflow_dispatch`）。
+- **缓存**：`index.html` 在 Pages CDN 上约 10 分钟缓存；页面里的 JS/CSS 带内容哈希，更新时文件名会变，不受影响。刚发完版看不到变化，先 Ctrl+Shift+R 强刷。
+- **绑自己的域名**：Settings → Pages → Custom domain 填域名，再去域名服务商加一条 CNAME 指向 `lux596606-rgb.github.io`。
+- **产物不会进仓库**：`dist/` 在 `.gitignore` 里，Pages 用的是 Actions 上传的构建产物（artifact），不会让仓库体积膨胀。
