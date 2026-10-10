@@ -468,11 +468,13 @@ export function ParticleCanvas({
   mode,
   paused,
   flow = { x: 0, y: 0 },
+  allowFireworks = true,
   onQualityChange,
 }: {
   mode: ParticleMode
   paused: boolean
   flow?: { x: number; y: number }
+  allowFireworks?: boolean
   onQualityChange?: (snapshot: QualitySnapshot) => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -497,6 +499,11 @@ export function ParticleCanvas({
   const applyTargetsRef = useRef<((nextMode: ParticleMode) => void) | null>(null)
   const flowRef = useRef(flow)
   const onQualityChangeRef = useRef(onQualityChange)
+  const allowFireworksRef = useRef(allowFireworks)
+
+  useEffect(() => {
+    allowFireworksRef.current = allowFireworks
+  }, [allowFireworks])
 
   useEffect(() => {
     flowRef.current = flow
@@ -991,13 +998,13 @@ export function ParticleCanvas({
       }
 
       // 收束模式的远景节奏：烟花在画布两侧轮换出现，和中央文字保持明确层级。
-      if (activeMode === 'closing' && !reducedMotion && seconds >= nextBackgroundFireworkAt) {
+      if (activeMode === 'closing' && allowFireworksRef.current && !reducedMotion && seconds >= nextBackgroundFireworkAt) {
         spawnBackgroundFirework(backgroundFireworks, width, height, tier, particles.length)
         nextBackgroundFireworkAt = seconds + 0.9 + Math.random() * 0.7
       }
 
       // 收束样式：星光聚拢完成后放一到两波轻量烟花，总量受档位限制。
-      if (activeMode === 'closing' && fireworksStarted && !transition.isRunning) {
+      if (activeMode === 'closing' && allowFireworksRef.current && fireworksStarted && !transition.isRunning) {
         if (wavesLaunched === 0) {
           spawnWave()
           wavesLaunched = 1

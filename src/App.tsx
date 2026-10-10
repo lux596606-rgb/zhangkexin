@@ -1,553 +1,287 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react'
-import {
-  Camera,
-  CameraOff,
-  Check,
-  Heart,
-  Keyboard,
-  Pause,
-  Play,
-  RotateCcw,
-  ShieldCheck,
-  Sparkles,
-  Volume2,
-  VolumeX,
-} from 'lucide-react'
-import { ParticleCanvas, type QualitySnapshot } from './components/ParticleCanvas'
-import { GestureController, type GestureMode, type GestureStatus } from './components/GestureController'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { Camera, CameraOff, HelpCircle, Pause, Play, Sparkles, Volume2, VolumeX, X } from 'lucide-react'
+import { GestureController, type GestureMode } from './components/GestureController'
 import { GestureFeedback } from './components/GestureFeedback'
 import { GestureGuide } from './components/GestureGuide'
-import { CameraFallbackNotice } from './components/CameraFallbackNotice'
-import { SketchDecor } from './components/SketchDecor'
-import { SKETCH_SIDES } from './components/sketchMotifs'
 import { cameraFallbackFor, type CameraStatus } from './components/cameraFallback'
 import { createGestureFeedbackState } from './components/gestureFeedbackState'
 import { createModeSwitchGuard } from './components/modeSelection'
-import { MOTION_NOTE, formatQualityLabel, useReducedMotion } from './components/motionPreference'
 import { useBirthdayMusic } from './components/BirthdayMusic'
+import { PhotoMoment, birthdayPortrait } from './components/PhotoMoment'
+import { ParticleStoryScene } from './components/ParticleStoryScene'
+import { BIRTHDAY_AGE } from './components/sketchMotifs'
+import { giftCopy } from './content/giftCopy'
 import './App.css'
 
-type ModeId = 'galaxy' | 'birthday' | 'pig' | 'closing'
-
-type Mode = {
-  id: ModeId
-  key: string
-  label: string
-  kicker: string
-  title: string
-  message: string
-  /** 画面这一刻的样子：四段同一层级、同一语气，只说看见什么，不解释怎么实现。 */
-  detail: string
-  leftNotes: string[]
-  mood: string
-}
-
-const modes: Mode[] = [
-  {
-    id: 'galaxy',
-    key: '1',
-    label: '银河态',
-    kicker: '01 / STARFIELD',
-    title: '让星光先替我说声生日快乐',
-    message: '愿新的一岁，日子像银河一样明亮自在。',
-    detail: '星尘正缓缓流动 · 拖动或滚轮可以改变流向',
-    leftNotes: ['先把今晚交给星光', '把烦恼放远一点', '只收集轻松和好心情'],
-    mood: '慢慢靠近',
-  },
-  {
-    id: 'birthday',
-    key: '2',
-    label: '生日快乐',
-    kicker: '02 / WISH TEXT',
-    title: '生日快乐，张珂欣',
-    message: '愿你每天开心，学习顺利，也越来越聪明。',
-    detail: '粒子聚成了祝福文字，正轻轻呼吸',
-    leftNotes: ['这一束光写给你', '每一天都值得被庆祝', '今天的主角，请收下掌声'],
-    mood: '把祝福说清楚',
-  },
-  {
-    id: 'pig',
-    key: '3',
-    label: '猪头卡通',
-    kicker: '03 / PINK CONSTELLATION',
-    title: '一颗可爱的粉色星座',
-    message: '把今天的好心情，收进这颗软乎乎的星星里。',
-    detail: '粒子拼出了猪头轮廓，腮红也亮着',
-    leftNotes: ['可爱是今天的通行证', '笑一下，运气会靠近', '这颗星星替你保管快乐'],
-    mood: '可爱正在发生',
-  },
-  {
-    id: 'closing',
-    key: '4',
-    label: '许愿收束',
-    kicker: '04 / WISH FINALE',
-    title: '愿望成真，张珂欣',
-    message: '闭上眼睛三秒，许下今天最想实现的小愿望。',
-    detail: '愿望光环已经亮起，烟花会从文字上方落下',
-    leftNotes: ['把愿望交给这一圈光', '不必急着长大', '愿你想要的，都有回音'],
-    mood: '许一个小愿望',
-  },
+const animationModes: { id: GestureMode; label: string; key: string }[] = [
+  { id: 'galaxy', label: '星光', key: '1' },
+  { id: 'birthday', label: '生日快乐', key: '2' },
+  { id: 'pig', label: '小彩蛋', key: '3' },
+  { id: 'closing', label: '许个愿', key: '4' },
 ]
 
+const ignoreGestureStatus = () => undefined
+
 const stars = Array.from({ length: 42 }, (_, index) => ({
-  left: `${(index * 47 + 9) % 100}%`,
-  top: `${(index * 31 + 7) % 100}%`,
-  size: `${(index % 3) + 1}px`,
-  delay: `${(index % 9) * 0.7}s`,
-  duration: `${4 + (index % 6)}s`,
+  left: String((index * 47 + 9) % 100) + '%',
+  top: String((index * 31 + 7) % 100) + '%',
+  size: String((index % 3) + 1) + 'px',
+  delay: String((index % 9) * -0.7) + 's',
 }))
 
 function App() {
-  const [started, setStarted] = useState(false)
-  const [currentMode, setCurrentMode] = useState<ModeId>('galaxy')
   const [paused, setPaused] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
   const [cameraStatus, setCameraStatus] = useState<CameraStatus>('idle')
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null)
-  const [gestureStatus, setGestureStatus] = useState<GestureStatus>('idle')
-  const [galaxyFlow, setGalaxyFlow] = useState({ x: 0, y: 0 })
-  const [quality, setQuality] = useState<QualitySnapshot>({ tier: 'high', fps: 0 })
-  /** 系统「减少动态效果」偏好：粒子画布内部按它降档，这里只用于把这条路径讲出来。 */
-  const reducedMotion = useReducedMotion()
+  const [activeMode, setActiveMode] = useState<GestureMode>('galaxy')
+  const [wishOpened, setWishOpened] = useState(false)
+  const [starsInView, setStarsInView] = useState(() => typeof IntersectionObserver === 'undefined')
+  const [gestureFeedback] = useState(createGestureFeedbackState)
   const videoRef = useRef<HTMLVideoElement>(null)
-  const dragPointRef = useRef<{ x: number; y: number } | null>(null)
-  // 手势反馈心跳：每帧就地更新，不走 state（否则整页每秒重渲染几十次）。
-  const [gestureFeedback] = useState(() => createGestureFeedbackState())
+  const starsRef = useRef<HTMLElement>(null)
+  const helpButtonRef = useRef<HTMLButtonElement>(null)
+  const cameraStreamRef = useRef<MediaStream | null>(null)
+  const cameraRequestRef = useRef(0)
+  const cameraPendingRef = useRef(false)
   const modeSwitchGuardRef = useRef(createModeSwitchGuard())
-  /** 供手势回调同步读取当前样式：手势回调是常驻的，不能依赖闭包里的 currentMode。 */
-  const currentModeRef = useRef<ModeId>('galaxy')
-  const {
-    available: musicAvailable,
-    muted: musicMuted,
-    playing: musicPlaying,
-    start: startMusic,
-    toggleMuted: toggleMusicMuted,
-    togglePlaying: toggleMusicPlaying,
-  } = useBirthdayMusic()
-
-  const activeMode = useMemo(
-    () => modes.find((mode) => mode.id === currentMode) ?? modes[0],
-    [currentMode],
-  )
-
-  /** 这一样式的简笔画装饰：左右两侧分别是什么，由 SKETCH_SIDES 单点决定。 */
-  const sketchSides = SKETCH_SIDES[currentMode]
-
-  useEffect(() => {
-    currentModeRef.current = currentMode
-  }, [currentMode])
-
-  const handleStart = useCallback(async () => {
-    if (cameraStatus === 'requesting') return
-
-    setStarted(true)
-    setCameraStatus('requesting')
-    void startMusic()
-
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setCameraStatus('unsupported')
-      return
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true })
-      setCameraStream(stream)
-      setCameraStatus('enabled')
-    } catch (error) {
-      const errorName = error instanceof DOMException ? error.name : ''
-      if (errorName === 'NotAllowedError' || errorName === 'SecurityError') {
-        setCameraStatus('denied')
-      } else if (errorName === 'NotFoundError' || errorName === 'OverconstrainedError') {
-        setCameraStatus('unavailable')
-      } else {
-        setCameraStatus('error')
-      }
-    }
-  }, [cameraStatus, startMusic])
+  const { available: musicAvailable, playing: musicPlaying, togglePlaying: toggleMusicPlaying } = useBirthdayMusic()
+  const fallbackCopy = cameraFallbackFor(cameraStatus)
 
   const closeCamera = useCallback(() => {
-    setCameraStream((stream) => {
-      stream?.getTracks().forEach((track) => track.stop())
-      return null
-    })
+    cameraRequestRef.current += 1
+    cameraPendingRef.current = false
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop())
+    cameraStreamRef.current = null
+    setCameraStream(null)
     setCameraStatus('closed')
   }, [])
 
-  const selectMode = useCallback((mode: ModeId) => {
-    setCurrentMode(mode)
-    setPaused(false)
-  }, [])
-
-  const handleGesture = useCallback((mode: GestureMode) => {
-    // 需求 8：识别不到手势时不会走到这里，当前样式原样保留。
-    // 需求 3.4.3：同一个手势重复触发同一目标仍然允许，重复设置同一目标不会产生过渡抖动。
-    if (mode === currentModeRef.current) return
-    // 只给「换样式」加一道很短的闸门（300ms），远小于做一次手势所需的 700ms 保持时间，
-    // 因此正常切换不受影响，只挡住模型在边界上逐帧摇摆造成的过渡动画反复重启。
-    if (!modeSwitchGuardRef.current.allow(performance.now())) return
-    selectMode(mode)
-  }, [selectMode])
-
-  const handleQualityChange = useCallback((snapshot: QualitySnapshot) => {
-    setQuality(snapshot)
-  }, [])
-
-  // 需求 3.1 / 6 / 8：摄像头用不了时，除了状态行，还给出「现在怎么继续」。
-  // 状态机与文案映射保持原样，这里只在其上补一层可操作的去处。
-  // 收起记录按「状态」而不是布尔量保存：状态一变（例如先没授权、之后又主动关闭）
-  // 就会自然再给一次提示，不需要用 effect 去重置 state。
-  const [fallbackDismissedStatus, setFallbackDismissedStatus] = useState<CameraStatus | null>(null)
-  const fallbackCopy = cameraFallbackFor(cameraStatus)
-  const showFallback = fallbackCopy !== null && fallbackDismissedStatus !== cameraStatus
-  const dismissFallback = useCallback(() => setFallbackDismissedStatus(cameraStatus), [cameraStatus])
-
-  const handleStageWheel = useCallback((event: ReactWheelEvent<HTMLElement>) => {
-    if (currentMode !== 'galaxy') return
-    event.preventDefault()
-    setGalaxyFlow((flow) => ({
-      x: flow.x,
-      y: Math.max(-240, Math.min(240, flow.y + event.deltaY * 0.16)),
-    }))
-  }, [currentMode])
-
-  const handleStagePointerDown = useCallback((event: ReactPointerEvent<HTMLElement>) => {
-    if (currentMode !== 'galaxy') return
-    dragPointRef.current = { x: event.clientX, y: event.clientY }
-    event.currentTarget.setPointerCapture(event.pointerId)
-  }, [currentMode])
-
-  const handleStagePointerMove = useCallback((event: ReactPointerEvent<HTMLElement>) => {
-    if (currentMode !== 'galaxy' || !dragPointRef.current) return
-    const deltaX = event.clientX - dragPointRef.current.x
-    const deltaY = event.clientY - dragPointRef.current.y
-    dragPointRef.current = { x: event.clientX, y: event.clientY }
-    setGalaxyFlow((flow) => ({
-      x: Math.max(-240, Math.min(240, flow.x + deltaX * 1.4)),
-      y: Math.max(-240, Math.min(240, flow.y + deltaY * 1.4)),
-    }))
-  }, [currentMode])
-
-  const handleStagePointerEnd = useCallback((event: ReactPointerEvent<HTMLElement>) => {
-    dragPointRef.current = null
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId)
+  const enableCamera = useCallback(async () => {
+    if (cameraPendingRef.current || cameraStreamRef.current) return
+    const request = ++cameraRequestRef.current
+    cameraPendingRef.current = true
+    setCameraStatus('requesting')
+    if (!navigator.mediaDevices?.getUserMedia) {
+      cameraPendingRef.current = false
+      setCameraStatus('unsupported')
+      return
     }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true })
+      if (request !== cameraRequestRef.current) {
+        stream.getTracks().forEach((track) => track.stop())
+        return
+      }
+      cameraStreamRef.current = stream
+      setCameraStream(stream)
+      setCameraStatus('enabled')
+    } catch (error) {
+      if (request !== cameraRequestRef.current) return
+      const name = error instanceof DOMException ? error.name : ''
+      setCameraStatus(name === 'NotAllowedError' || name === 'SecurityError' ? 'denied'
+        : name === 'NotFoundError' || name === 'OverconstrainedError' ? 'unavailable' : 'error')
+    } finally {
+      if (request === cameraRequestRef.current) cameraPendingRef.current = false
+    }
+  }, [])
+
+  useEffect(() => () => {
+    cameraRequestRef.current += 1
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop())
   }, [])
 
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
     video.srcObject = cameraStream
-    return () => {
-      video.srcObject = null
-    }
-  }, [cameraStream, started])
-
-  useEffect(() => {
-    return () => {
-      cameraStream?.getTracks().forEach((track) => track.stop())
-    }
+    return () => { video.srcObject = null }
   }, [cameraStream])
 
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!started) {
-        if (event.key === 'Enter') {
-          event.preventDefault()
-          void handleStart()
-        }
-        return
-      }
+    const section = starsRef.current
+    if (!section) return
+    if (typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver(
+      ([entry]) => setStarsInView(entry.isIntersecting),
+      { rootMargin: '80px 0px', threshold: 0.08 },
+    )
+    observer.observe(section)
+    return () => observer.disconnect()
+  }, [])
 
-      const modeByKey: Record<string, ModeId> = {
-        '1': 'galaxy',
-        '2': 'birthday',
-        '3': 'pig',
-        '4': 'closing',
-      }
-      if (modeByKey[event.key]) {
+  useEffect(() => {
+    if ((!starsInView || !helpOpen) && (cameraStreamRef.current || cameraPendingRef.current)) closeCamera()
+  }, [starsInView, helpOpen, closeCamera])
+
+  const handleGesture = useCallback((mode: GestureMode) => {
+    if (mode === activeMode || !modeSwitchGuardRef.current.allow(performance.now())) return
+    setActiveMode(mode)
+  }, [activeMode])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!starsInView || event.altKey || event.ctrlKey || event.metaKey || event.repeat) return
+      if (document.querySelector('dialog[open]')) return
+      if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]')) return
+      const mode = animationModes.find((item) => item.key === event.key)
+      if (mode) {
         event.preventDefault()
-        selectMode(modeByKey[event.key])
-      } else if (event.key === ' ') {
-        event.preventDefault()
-        setPaused((value) => !value)
-      } else if (event.key.toLowerCase() === 'r') {
-        event.preventDefault()
-        setCurrentMode('galaxy')
-        setPaused(false)
-        setGalaxyFlow({ x: 0, y: 0 })
+        setActiveMode(mode.id)
       }
     }
-
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [handleStart, selectMode, started])
+  }, [starsInView])
 
-  // 状态行与反馈条（GestureFeedback）用同一套说法：每个状态全站只有一个名字。
-  const cameraLabel: Record<CameraStatus, string> = {
-    idle: '摄像头未开启',
-    requesting: '摄像头授权中',
-    enabled: '摄像头已开启',
-    denied: '摄像头未开启 · 这次先跳过',
-    unavailable: '摄像头未开启 · 没有找到摄像头',
-    unsupported: '摄像头未开启 · 这个浏览器打不开它',
-    error: '摄像头未开启 · 这次没能打开',
-    closed: '摄像头未开启 · 已经先收起来了',
-  }
-
-  const gestureLabel: Record<GestureStatus, string> = {
-    idle: '手势未启动',
-    loading: '手势识别加载中',
-    ready: '已识别手势',
-    holding: '保持一下就会切换',
-    recognized: '手势已触发',
-    unrecognized: '未识别到手势',
-    unavailable: '手势识别不可用 · 可用键盘或鼠标',
+  const closeHelp = () => {
+    if (cameraStreamRef.current || cameraPendingRef.current) closeCamera()
+    setHelpOpen(false)
+    helpButtonRef.current?.focus()
   }
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell${paused ? ' is-paused' : ''}`} id="top">
       <div className="starfield" aria-hidden="true">
-        {stars.map((star, index) => (
-          <i
-            className="star"
-            key={index}
-            style={
-              {
-                left: star.left,
-                top: star.top,
-                width: star.size,
-                height: star.size,
-                animationDelay: star.delay,
-                animationDuration: star.duration,
-              } as CSSProperties
-            }
-          />
-        ))}
+        {stars.map((star, index) => <i className="star" key={index} style={{ left: star.left, top: star.top, width: star.size, height: star.size, animationDelay: star.delay } as CSSProperties} />)}
       </div>
-      <div className="aurora aurora-one" aria-hidden="true" />
-      <div className="aurora aurora-two" aria-hidden="true" />
       <GestureController
         videoRef={videoRef}
-        enabled={cameraStatus === 'enabled' && Boolean(cameraStream)}
+        enabled={cameraStatus === 'enabled' && helpOpen && starsInView}
         onGesture={handleGesture}
-        onStatus={setGestureStatus}
+        onStatus={ignoreGestureStatus}
         feedback={gestureFeedback}
       />
 
-      {!started ? (
-        <main className="landing" aria-labelledby="landing-title">
-          <div className="landing-topline">
-            <span className="signal-dot" />
-            <span>10.11 · A SMALL BIRTHDAY UNIVERSE FOR YOU</span>
+      <header className="site-header">
+        <div className="site-header__inner">
+          <a className="site-brand" href="#top"><Sparkles size={17} aria-hidden="true" /> 给张珂欣</a>
+          <div className="header-actions">
+            {cameraStatus === 'enabled' && <button className="text-button camera-active" type="button" onClick={closeCamera}><CameraOff size={16} aria-hidden="true" /> 关闭摄像头</button>}
+            <button className="text-button motion-button" type="button" onClick={() => setPaused((value) => !value)} aria-label={paused ? '继续全部动效' : '暂停全部动效'} aria-pressed={paused} title={paused ? '继续全部动效' : '暂停全部动效'}>
+              {paused ? <Play size={17} aria-hidden="true" /> : <Pause size={17} aria-hidden="true" />}
+            </button>
+            <button className="text-button music-button" type="button" onClick={toggleMusicPlaying} disabled={!musicAvailable} aria-label={!musicAvailable ? '音乐暂不可用' : musicPlaying ? '暂停音乐' : '播放音乐'} aria-pressed={musicPlaying}>
+              {musicPlaying ? <Volume2 size={17} aria-hidden="true" /> : <VolumeX size={17} aria-hidden="true" />}
+              {musicPlaying ? '暂停音乐' : '播放音乐'}
+            </button>
           </div>
-          <div className="landing-content">
-            <div className="landing-copy">
-              <p className="eyebrow">A BIRTHDAY CONSTELLATION</p>
-              <h1 id="landing-title">张珂欣<i className="hero-punctuation">，</i><span>生日快乐</span></h1>
-              <p className="landing-message">
-                送你一片可以自由探索的星光。愿新的一岁，开心常在，学习顺利，也越来越聪明。
-              </p>
-              <div className="landing-actions">
-                <button className="primary-button" type="button" onClick={() => void handleStart()}>
-                  <Sparkles size={18} aria-hidden="true" />
-                  开启星光
-                </button>
-                <span className="enter-hint">或按 Enter 开始</span>
-              </div>
-              <div className="privacy-note">
-                <ShieldCheck size={16} aria-hidden="true" />
-                <span>摄像头只在本地预览，不上传画面；不打开摄像头也能完整浏览。</span>
+        </div>
+      </header>
+
+      <main className="story">
+        <section className="hero" aria-labelledby="hero-title">
+          <div className="hero__inner">
+            <div className="hero__copy">
+              <h1 className="hero__title" id="hero-title"><span>{giftCopy.hero.title[0]}</span><span>{giftCopy.hero.title[1]}</span></h1>
+            </div>
+            <figure className="hero__photo">
+              <img src={birthdayPortrait} alt="张珂欣戴着蓝色迷彩帽和眼镜，看向镜头" width={1280} height={2182} fetchPriority="high" />
+            </figure>
+          </div>
+        </section>
+
+        <section className="story-section story-section--stars" id="stars" ref={starsRef} aria-labelledby="stars-title">
+          <div className="section-inner">
+            <div className="stars-intro">
+              <h2 className="section-heading" id="stars-title">{giftCopy.opening.title}</h2>
+            </div>
+            <div className="stars-stage-wrap">
+              <ParticleStoryScene mode={activeMode} paused={paused} allowFireworks={wishOpened} className="story-stage--main" />
+              <div className="stars-tools">
+                <p>鼠标可以轻轻拖动星河。手机上，直接往下滑就好。</p>
+                <button className="icon-button" type="button" onClick={() => setPaused((value) => !value)} aria-pressed={paused} aria-label={paused ? '继续动画' : '暂停动画'} title={paused ? '继续动画' : '暂停动画'}>{paused ? <Play size={17} aria-hidden="true" /> : <Pause size={17} aria-hidden="true" />}</button>
               </div>
             </div>
-            <div className="landing-orbit" aria-hidden="true">
-              <div className="orbit orbit-outer" />
-              <div className="orbit orbit-inner" />
-              <div className="orbit-core"><Sparkles size={26} /></div>
-              <span className="orbit-label orbit-label-top">FOR KEXIN</span>
-              <span className="orbit-label orbit-label-bottom">SOFT LIGHT · 10.11</span>
+            <div className="mode-choices" role="group" aria-label="切换星空里的粒子效果">
+              {animationModes.map((mode) => <button className="mode-choice" key={mode.id} type="button" aria-pressed={activeMode === mode.id} onClick={() => setActiveMode(mode.id)}><span>{mode.key}</span>{mode.label}</button>)}
+            </div>
+            <button ref={helpButtonRef} className="text-button help-toggle" type="button" aria-expanded={helpOpen} aria-controls="gift-help" onClick={() => setHelpOpen((value) => !value)}><HelpCircle size={16} aria-hidden="true" /> 怎么玩</button>
+            <div className="play-panel" id="gift-help" hidden={!helpOpen}>
+              <div className="play-panel__head"><h3>多玩一会儿</h3><button className="icon-button" aria-label="收起手势玩法" type="button" onClick={closeHelp}><X size={18} /></button></div>
+              <p>这只是星空里的一种玩法。直接往下读，整份祝福也都在。</p>
+              <GestureGuide />
+              <div className="camera-invitation">
+                <button className="secondary-button" type="button" onClick={cameraStatus === 'requesting' || cameraStream ? closeCamera : () => void enableCamera()}>
+                  {cameraStatus === 'requesting' || cameraStream ? <CameraOff size={17} /> : <Camera size={17} />}
+                  {cameraStatus === 'requesting' ? '取消开启' : cameraStream ? '关闭摄像头' : '试试手势'}
+                </button>
+                <p>只有点这里才会打开摄像头；识别只在你的设备上进行。离开这片星空后，摄像头会自动关闭。</p>
+              </div>
+              {cameraStatus === 'requesting' && <p role="status">可以在浏览器提示里选择是否开启；也可以取消，继续往下读。</p>}
+              {fallbackCopy && <div className="camera-message" role="status"><p>{fallbackCopy.title}</p><p>{fallbackCopy.body}</p></div>}
+              {cameraStream && <div className="camera-dock"><video ref={videoRef} autoPlay playsInline muted aria-label="本地摄像头预览" /><GestureFeedback state={gestureFeedback} /></div>}
+              <p className="keyboard-note">不用摄像头也可以按 <kbd>1</kbd>—<kbd>4</kbd> 换星空效果。键盘空格仍然可以正常向下翻页。</p>
             </div>
           </div>
-          <GestureGuide />
-          <footer className="landing-footer">
-            <span>一份轻轻放在夜空里的祝福</span>
-            <span className="footer-rule" />
-            <span>键盘 1 / 2 / 3 / 4 切换四种画面</span>
-          </footer>
-        </main>
-      ) : (
-        <main className={`experience ${paused ? 'is-paused' : ''}`} aria-labelledby="experience-title">
-          <header className="topbar">
-            <div className="brand">
-              <span className="brand-mark"><Sparkles size={14} aria-hidden="true" /></span>
-              <span>张珂欣 · 生日星图</span>
+        </section>
+
+        <section className="story-section story-section--birthday" aria-labelledby="birthday-title">
+          <div className="section-inner birthday-layout">
+            <div className="birthday-copy">
+              <h2 className="section-heading" id="birthday-title">{giftCopy.birthday.title}</h2>
+              <div className="section-prose">{giftCopy.birthday.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</div>
+              <ul className="birthday-wishes">{giftCopy.birthday.wishes.map((wish) => <li key={wish}>{wish}</li>)}</ul>
             </div>
-            <div className="topbar-actions">
-              <span className={`camera-status status-${cameraStatus}`}>
-                <span className="status-light" />
-                {cameraLabel[cameraStatus]}
-              </span>
-              <button
-                type="button"
-                className="icon-button"
-                onClick={closeCamera}
-                disabled={!cameraStream}
-                title="关闭摄像头"
-                aria-label="关闭摄像头"
-              >
-                <CameraOff size={17} aria-hidden="true" />
-              </button>
-              <span className={`gesture-status gesture-${gestureStatus}`} aria-live="polite">
-                <span className="status-light" />
-                {gestureLabel[gestureStatus]}
-              </span>
-              <button
-                type="button"
-                className={`icon-button ${musicMuted ? '' : 'is-active'}`}
-                onClick={toggleMusicMuted}
-                title={musicMuted ? '打开音乐' : '静音音乐'}
-                aria-label={musicMuted ? '打开音乐' : '静音音乐'}
-                aria-pressed={!musicMuted}
-              >
-                {musicMuted ? <VolumeX size={17} aria-hidden="true" /> : <Volume2 size={17} aria-hidden="true" />}
-              </button>
-              <button
-                type="button"
-                className={`icon-button ${musicPlaying ? 'is-active' : ''}`}
-                onClick={toggleMusicPlaying}
-                disabled={!musicAvailable}
-                title={musicPlaying ? '暂停音乐' : '继续音乐'}
-                aria-label={musicPlaying ? '暂停音乐' : '继续音乐'}
-                aria-pressed={musicPlaying}
-              >
-                {musicPlaying ? <Pause size={17} aria-hidden="true" /> : <Play size={17} aria-hidden="true" />}
-              </button>
+            <div className="birthday-visual"><ParticleStoryScene mode="birthday" paused={paused} /></div>
+          </div>
+        </section>
+
+        <section className="story-section story-section--photo" aria-labelledby="photo-title">
+          <div className="section-inner photo-layout">
+            <div className="photo-copy">
+              <h2 className="section-heading" id="photo-title">{giftCopy.photo.title}</h2>
+              <div className="section-prose">{giftCopy.photo.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</div>
             </div>
-          </header>
+            <div className="photo-visual"><PhotoMoment /></div>
+          </div>
+        </section>
 
-          <div className="experience-grid">
-            <section className="scene-copy" key={currentMode}>
-              <p className="eyebrow">{activeMode.kicker}</p>
-              <h1 id="experience-title">{activeMode.title}</h1>
-              <p className="scene-message">{activeMode.message}</p>
-              <p className="scene-detail">{activeMode.detail}</p>
+        <section className="story-section story-section--pig" aria-labelledby="pig-title">
+          <div className="section-inner pig-layout">
+            <div className="pig-copy"><h2 className="section-heading" id="pig-title">{giftCopy.pig.title}</h2></div>
+            <div className="pig-visual"><ParticleStoryScene mode="pig" paused={paused} /></div>
+          </div>
+        </section>
 
-              <div className="scene-letter" aria-label="这一幕的小笺">
-                <div className="scene-letter-heading"><Heart size={14} aria-hidden="true" /> {activeMode.mood}</div>
-                <div className="scene-letter-lines">
-                  {activeMode.leftNotes.map((note) => <span key={note}>{note}</span>)}
-                </div>
-              </div>
+        <section className="story-section story-section--letter" aria-labelledby="letter-title">
+          <div className="section-inner letter-layout">
+            <h2 className="section-heading" id="letter-title">{giftCopy.letter.title}</h2>
+            <article className="birthday-letter" aria-label="写给张珂欣的短笺">
+              {giftCopy.letter.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+            </article>
+          </div>
+        </section>
 
-              <div className="control-row">
-                <button
-                  type="button"
-                  className="control-button"
-                  onClick={() => setPaused((value) => !value)}
-                  title={paused ? '继续动画' : '暂停动画'}
-                >
-                  {paused ? <Play size={16} aria-hidden="true" /> : <Pause size={16} aria-hidden="true" />}
-                  {paused ? '继续' : '暂停'}
-                </button>
-                <button
-                  type="button"
-                  className="control-button control-button-muted"
-                  onClick={() => {
-                    setCurrentMode('galaxy')
-                    setPaused(false)
-                    setGalaxyFlow({ x: 0, y: 0 })
-                  }}
-                  title="回到银河态"
-                >
-                  <RotateCcw size={16} aria-hidden="true" />
-                  回到银河态
-                </button>
-              </div>
-
-              <div className="keyboard-guide">
-                <div className="guide-heading"><Keyboard size={15} aria-hidden="true" /> 键盘提示</div>
-                <div className="key-list">
-                  <span><kbd>1</kbd> 银河</span>
-                  <span><kbd>2</kbd> 生日</span>
-                  <span><kbd>3</kbd> 猪头</span>
-                  <span><kbd>4</kbd> 许愿</span>
-                  <span><kbd>空格</kbd> 暂停</span>
-                  <span><kbd>R</kbd> 重置</span>
-                </div>
-              </div>
-            </section>
-
-            {/* 右列：舞台在上、摄像头预览与手势反馈在下，二者同宽。
-                摄像头因此完全在动画框之外，video 元素本身不变（手势识别仍从它取帧）。 */}
-            <div className="stage-column">
-              <section
-                className={`stage stage-${currentMode}`}
-                aria-label={`${activeMode.label}动画预览`}
-                onWheel={handleStageWheel}
-                onPointerDown={handleStagePointerDown}
-                onPointerMove={handleStagePointerMove}
-                onPointerUp={handleStagePointerEnd}
-                onPointerCancel={handleStagePointerEnd}
-              >
-                <div className="stage-grid" aria-hidden="true" />
-                <div className="stage-halo" aria-hidden="true" />
-                <div className="stage-sweep" aria-hidden="true" />
-                {/* 简笔画装饰（蛋糕 / 19 岁数字蜡烛 / 爱心）：需求要求这些用简笔画，
-                    不写成粒子，所以单独一层 SVG，落在舞台两侧、不压中央的粒子主体。 */}
-                <SketchDecor side="left" motif={sketchSides.left} />
-                <SketchDecor side="right" motif={sketchSides.right} />
-                <ParticleCanvas mode={currentMode} paused={paused} flow={galaxyFlow} onQualityChange={handleQualityChange} />
-                {fallbackCopy && showFallback && (
-                  <CameraFallbackNotice copy={fallbackCopy} onDismiss={dismissFallback} />
-                )}
-                <div className="stage-caption">
-                  <span>{activeMode.label}</span>
-                  <span
-                    className="stage-quality"
-                    data-tier={quality.tier}
-                    data-motion={reducedMotion ? 'reduced' : 'full'}
-                  >
-                    {formatQualityLabel(quality.tier, quality.fps, reducedMotion)}
-                  </span>
-                  <span>{paused ? '已暂停' : 'LIVE'}</span>
-                </div>
-              </section>
-
-              {cameraStatus === 'enabled' && cameraStream && (
-                <div className="camera-dock">
-                  <div className="camera-preview">
-                    <video ref={videoRef} autoPlay playsInline muted />
-                    <span><Camera size={12} aria-hidden="true" /> 本地预览</span>
+        <section className="story-section story-section--wish" aria-labelledby="wish-title">
+          <div className="section-inner wish-layout">
+            <div className="wish-copy">
+              <h2 className="section-heading" id="wish-title">{giftCopy.wish.title}</h2>
+              <div className="section-prose">{giftCopy.wish.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</div>
+            </div>
+            <div className="wish-stage">
+              <p className="sr-only" role="status">{wishOpened ? '愿望收好啦。送给你的烟花和最后几句祝福，就在下面。' : ''}</p>
+              {wishOpened ? (
+                <div className="wish-reveal">
+                  <ParticleStoryScene mode="closing" paused={paused} />
+                  <div className="finale">
+                    <h3>{giftCopy.finale.title}</h3>
+                    {giftCopy.finale.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+                    <p className="closing-signature">{giftCopy.finale.signoff}<br /><time dateTime="2026-10-11">{giftCopy.finale.date}</time></p>
                   </div>
-                  <GestureFeedback state={gestureFeedback} />
+                </div>
+              ) : (
+                <div className="wish-pause">
+                  <div className="wish-orbit" aria-hidden="true"><Sparkles size={25} /><span>{BIRTHDAY_AGE}</span></div>
+                  <button className="primary-button wish-button" type="button" onClick={() => setWishOpened(true)}>{giftCopy.wish.prompt} <Sparkles size={18} aria-hidden="true" /></button>
                 </div>
               )}
             </div>
           </div>
+        </section>
+      </main>
 
-          <nav className="mode-nav" aria-label="祝福模式">
-            <div className="mode-nav-label">挑一束星光</div>
-            <div className="mode-tabs">
-              {modes.map((mode) => (
-                <button
-                  className={`mode-tab ${currentMode === mode.id ? 'is-selected' : ''}`}
-                  key={mode.id}
-                  type="button"
-                  onClick={() => selectMode(mode.id)}
-                  aria-pressed={currentMode === mode.id}
-                >
-                  <span className="mode-key">{mode.key}</span>
-                  <span>{mode.label}</span>
-                  {currentMode === mode.id && <Check size={14} aria-hidden="true" />}
-                </button>
-              ))}
-            </div>
-            <div className="music-note">
-              {musicAvailable ? 'Happy Birthday · 星光旋律' : '当前浏览器不支持音乐'}
-            </div>
-            <p className="motion-note">{MOTION_NOTE}</p>
-          </nav>
-        </main>
-      )}
+      <footer className="site-footer"><span>给张珂欣的十九岁。</span><a href="#top">回到开头 ↑</a></footer>
     </div>
   )
 }

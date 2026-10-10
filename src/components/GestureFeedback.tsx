@@ -9,10 +9,10 @@ type GestureFeedbackProps = {
 }
 
 const modeLabels: Record<GestureMode, string> = {
-  galaxy: '银河态',
+  galaxy: '星光',
   birthday: '生日快乐',
-  pig: '猪头卡通',
-  closing: '许愿收束',
+  pig: '小彩蛋',
+  closing: '许个愿',
 }
 
 /** 与键盘 1 / 2 / 3 / 4 一致的手势入口编号，让使用者一眼对上提示。 */
@@ -54,7 +54,7 @@ function copyFor(state: GestureFeedbackState): FeedbackCopy {
         status: state.status,
         label: '手势未启动',
         mode: null,
-        hint: '开启摄像头即可用手势切换，键盘 1 / 2 / 3 / 4 始终可用',
+        hint: '想用手势时，点「试试手势」；祝福往下滚动就能读完',
         showProgress: false,
         showConfidence: false,
       }
@@ -63,7 +63,7 @@ function copyFor(state: GestureFeedbackState): FeedbackCopy {
         status: state.status,
         label: '手势识别加载中',
         mode: null,
-        hint: '模型在本地加载，画面不会上传',
+        hint: '正在准备手势识别，摄像头画面不会上传',
         showProgress: false,
         showConfidence: false,
       }
@@ -110,7 +110,7 @@ function copyFor(state: GestureFeedbackState): FeedbackCopy {
         status: state.status,
         label: '手势识别不可用',
         mode: null,
-        hint: '键盘 1 / 2 / 3 / 4 与鼠标点选仍然完全可用',
+        hint: '往下滚动继续读；也能点选星空下的按钮切换动画',
         showProgress: false,
         showConfidence: false,
       }

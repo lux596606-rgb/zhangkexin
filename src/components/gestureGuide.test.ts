@@ -7,13 +7,13 @@ import {
 } from './gestureOnboarding'
 import { HOLD_MS } from './gestureRecognition'
 
-describe('落地页手势引导（需求 3.2 / 8）', () => {
-  it('四种手势与四个样式、四个按键一一对应', () => {
-    expect(GESTURE_GUIDE.map((item) => [item.id, item.mode, item.key])).toEqual([
-      ['openPalm', 'galaxy', '1'],
-      ['pinch', 'birthday', '2'],
-      ['fist', 'pig', '3'],
-      ['thumbUp', 'closing', '4'],
+describe('「怎么玩」中的手势说明', () => {
+  it('四种手势与四种星空动画、按键、显示名称一一对应', () => {
+    expect(GESTURE_GUIDE.map((item) => [item.id, item.mode, item.key, item.modeLabel])).toEqual([
+      ['openPalm', 'galaxy', '1', '星光'],
+      ['pinch', 'birthday', '2', '生日快乐'],
+      ['fist', 'pig', '3', '小彩蛋'],
+      ['thumbUp', 'closing', '4', '许个愿'],
     ])
   })
 
@@ -32,10 +32,16 @@ describe('落地页手势引导（需求 3.2 / 8）', () => {
     expect(GESTURE_GUIDE_TITLE).toContain('保持')
   })
 
-  it('入口说明讲清键盘 / 鼠标同样可用且不需要摄像头', () => {
+  it('主线滚动阅读不需要摄像头，按键只改变星空动画', () => {
     expect(GESTURE_GUIDE_FALLBACK_NOTE).toContain('没有摄像头')
+    expect(GESTURE_GUIDE_FALLBACK_NOTE).toContain('往下读')
+    expect(GESTURE_GUIDE_FALLBACK_NOTE).toContain('星空下的按钮')
+    expect(GESTURE_GUIDE_FALLBACK_NOTE).toContain('点选')
     expect(GESTURE_GUIDE_FALLBACK_NOTE).toContain('键盘 1 / 2 / 3 / 4')
-    expect(GESTURE_GUIDE_FALLBACK_NOTE).toContain('星光入口')
+    expect(GESTURE_GUIDE_FALLBACK_NOTE).toContain('只改变星空')
+    expect(GESTURE_GUIDE_FALLBACK_NOTE).not.toContain('「接着看」')
+    expect(GESTURE_GUIDE_FALLBACK_NOTE).not.toContain('星光入口')
+    expect(GESTURE_GUIDE_FALLBACK_NOTE).not.toContain('下方')
   })
 
   it('每一项都有中文手势名与样式名（图示之外仍有文字兜底）', () => {

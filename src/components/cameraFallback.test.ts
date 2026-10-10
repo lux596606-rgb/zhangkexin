@@ -9,7 +9,7 @@ import {
 const DEGRADED_STATUSES: CameraStatus[] = ['denied', 'unavailable', 'unsupported', 'error', 'closed']
 const HEALTHY_STATUSES: CameraStatus[] = ['idle', 'requesting', 'enabled']
 
-describe('摄像头降级提示（需求 3.1 / 6 / 8）', () => {
+describe('摄像头不可用时的继续方式', () => {
   it('五种不可用状态都有提示，且回填的 status 与查询一致', () => {
     for (const status of DEGRADED_STATUSES) {
       const copy = cameraFallbackFor(status)
@@ -26,13 +26,34 @@ describe('摄像头降级提示（需求 3.1 / 6 / 8）', () => {
     }
   })
 
-  it('每条提示都直接指出继续方式：键盘 1/2/3/4 或点选四个入口', () => {
+  it('每条提示都先指向滚动阅读，再说明可选的星空玩法', () => {
     for (const status of DEGRADED_STATUSES) {
       const copy = cameraFallbackFor(status)
-      expect(copy?.steps.length, status).toBeGreaterThanOrEqual(2)
+      expect(copy?.steps.length, status).toBeGreaterThanOrEqual(3)
+      expect(copy?.steps[0], status).toContain('往下滚动')
       const steps = copy?.steps.join(' ') ?? ''
+      expect(steps, status).toContain('星空下的按钮')
+      expect(steps, status).toContain('点选')
       expect(steps, status).toContain('键盘 1 / 2 / 3 / 4')
-      expect(steps, status).toContain('星光入口')
+      expect(steps, status).toContain('只切换星空动画')
+    }
+  })
+
+  it('关闭或未能打开摄像头时，可以从帮助面板直接重试', () => {
+    for (const status of ['denied', 'unavailable', 'error', 'closed'] as const) {
+      const body = cameraFallbackFor(status)?.body ?? ''
+      expect(body, status).toContain('「怎么玩」')
+      expect(body, status).toContain('「试试手势」')
+    }
+  })
+
+  it('不指向旧的换幕按钮、跳幕入口或刷新页面', () => {
+    for (const status of DEGRADED_STATUSES) {
+      const item = cameraFallbackFor(status)
+      const copy = [item?.title, item?.body, ...(item?.steps ?? [])].join('')
+      for (const outdated of ['刷新', '接着看', '切换画面', '开启星光', '星光入口', '最下面', '不用按顺序']) {
+        expect(copy, status).not.toContain(outdated)
+      }
     }
   })
 
