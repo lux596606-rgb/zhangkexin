@@ -401,8 +401,11 @@
 .landing-guide__icon { display: flex; color: var(--gift-accent); }
 .landing-guide__gesture { color: #f3dcd5; font-size: 14px; }
 .landing-guide__target { color: var(--gift-muted); font-size: 13px; }
-.camera-invitation { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 17px; margin-top: 20px; }
-.camera-invitation p { margin: 0; }
+/* 摄像头就在星空下面：打开页面时问过一次，这里负责说明状态、重开或关掉。 */
+.camera-bar { margin-top: 22px; }
+.camera-bar__controls { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 18px; }
+.camera-bar__controls p { max-width: 52ch; margin: 0; color: var(--gift-muted); font-size: 13px; line-height: 1.8; }
+.camera-bar__status { margin: 14px 0 0; color: #f0d2c8; font-size: 14px; line-height: 1.85; }
 .camera-message { margin-top: 15px; }
 .camera-message p { margin: 2px 0; }
 .camera-dock { display: flex; align-items: center; gap: 20px; margin: 20px 0; }

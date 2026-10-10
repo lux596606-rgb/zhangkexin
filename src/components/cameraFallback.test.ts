@@ -39,11 +39,10 @@ describe('摄像头不可用时的继续方式', () => {
     }
   })
 
-  it('关闭或未能打开摄像头时，可以从帮助面板直接重试', () => {
+  it('关闭或未能打开摄像头时，可以点星空下的按钮直接重试', () => {
     for (const status of ['denied', 'unavailable', 'error', 'closed'] as const) {
       const body = cameraFallbackFor(status)?.body ?? ''
-      expect(body, status).toContain('「怎么玩」')
-      expect(body, status).toContain('「试试手势」')
+      expect(body, status).toContain('按钮')
     }
   })
 

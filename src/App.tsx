@@ -86,9 +86,18 @@ function App() {
     }
   }, [])
 
+  // 打开页面就申请一次摄像头权限：手势是这份礼物的主要玩法，先问一次最省事。
+  // 浏览器弹窗里选「不允许」也只是一次性的，下面的按钮可以随时再开。
+  useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- 权限状态来自浏览器，只能在挂载后同步一次
+    void enableCamera()
+  }, [enableCamera])
+
   useEffect(() => () => {
     cameraRequestRef.current += 1
+    cameraPendingRef.current = false
     cameraStreamRef.current?.getTracks().forEach((track) => track.stop())
+    cameraStreamRef.current = null
   }, [])
 
   useEffect(() => {
@@ -110,14 +119,11 @@ function App() {
     return () => observer.disconnect()
   }, [])
 
-  useEffect(() => {
-    if ((!starsInView || !helpOpen) && (cameraStreamRef.current || cameraPendingRef.current)) closeCamera()
-  }, [starsInView, helpOpen, closeCamera])
-
   const handleGesture = useCallback((mode: GestureMode) => {
-    if (mode === activeMode || !modeSwitchGuardRef.current.allow(performance.now())) return
+    // 手势只改变星空的粒子效果，所以只在星空可见时生效；阅读区不会被手势打断。
+    if (!starsInView || mode === activeMode || !modeSwitchGuardRef.current.allow(performance.now())) return
     setActiveMode(mode)
-  }, [activeMode])
+  }, [activeMode, starsInView])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -135,10 +141,11 @@ function App() {
   }, [starsInView])
 
   const closeHelp = () => {
-    if (cameraStreamRef.current || cameraPendingRef.current) closeCamera()
     setHelpOpen(false)
     helpButtonRef.current?.focus()
   }
+
+  const cameraNotice = cameraStatus === 'closed' ? null : fallbackCopy
 
   return (
     <div className={`app-shell${paused ? ' is-paused' : ''}`} id="top">
@@ -147,7 +154,7 @@ function App() {
       </div>
       <GestureController
         videoRef={videoRef}
-        enabled={cameraStatus === 'enabled' && helpOpen && starsInView}
+        enabled={cameraStatus === 'enabled'}
         onGesture={handleGesture}
         onStatus={ignoreGestureStatus}
         feedback={gestureFeedback}
@@ -196,22 +203,24 @@ function App() {
             <div className="mode-choices" role="group" aria-label="切换星空里的粒子效果">
               {animationModes.map((mode) => <button className="mode-choice" key={mode.id} type="button" aria-pressed={activeMode === mode.id} onClick={() => setActiveMode(mode.id)}><span>{mode.key}</span>{mode.label}</button>)}
             </div>
+            <div className="camera-bar">
+              <div className="camera-bar__controls">
+                <button className="secondary-button" type="button" onClick={cameraStream || cameraStatus === 'requesting' ? closeCamera : () => void enableCamera()}>
+                  {cameraStream || cameraStatus === 'requesting' ? <CameraOff size={17} aria-hidden="true" /> : <Camera size={17} aria-hidden="true" />}
+                  {cameraStatus === 'requesting' ? '取消开启' : cameraStream ? '关闭摄像头' : '开启摄像头'}
+                </button>
+                <p>打开页面时会问一次摄像头，用来识别手势。画面只在这台设备上处理，不会上传，也不会保存。</p>
+              </div>
+              {cameraStatus === 'requesting' && <p className="camera-bar__status" role="status">在浏览器的弹窗里选择「允许」，就能对着镜头比手势了；不想开也没关系，页面照样能往下读完。</p>}
+              {cameraNotice && <div className="camera-message" role="status"><p>{cameraNotice.title}</p><p>{cameraNotice.body}</p></div>}
+              {cameraStream && <div className="camera-dock"><video ref={videoRef} autoPlay playsInline muted aria-label="本地摄像头预览" /><GestureFeedback state={gestureFeedback} /></div>}
+            </div>
             <button ref={helpButtonRef} className="text-button help-toggle" type="button" aria-expanded={helpOpen} aria-controls="gift-help" onClick={() => setHelpOpen((value) => !value)}><HelpCircle size={16} aria-hidden="true" /> 怎么玩</button>
             <div className="play-panel" id="gift-help" hidden={!helpOpen}>
-              <div className="play-panel__head"><h3>多玩一会儿</h3><button className="icon-button" aria-label="收起手势玩法" type="button" onClick={closeHelp}><X size={18} /></button></div>
-              <p>这只是星空里的一种玩法。直接往下读，整份祝福也都在。</p>
+              <div className="play-panel__head"><h3>手势怎么玩</h3><button className="icon-button" aria-label="收起手势玩法" type="button" onClick={closeHelp}><X size={18} /></button></div>
+              <p>对着镜头比一个手势，保持一下，星空就会换成对应的动画。不想用手势时，上面的按钮和数字键一样能换。</p>
               <GestureGuide />
-              <div className="camera-invitation">
-                <button className="secondary-button" type="button" onClick={cameraStatus === 'requesting' || cameraStream ? closeCamera : () => void enableCamera()}>
-                  {cameraStatus === 'requesting' || cameraStream ? <CameraOff size={17} /> : <Camera size={17} />}
-                  {cameraStatus === 'requesting' ? '取消开启' : cameraStream ? '关闭摄像头' : '试试手势'}
-                </button>
-                <p>只有点这里才会打开摄像头；识别只在你的设备上进行。离开这片星空后，摄像头会自动关闭。</p>
-              </div>
-              {cameraStatus === 'requesting' && <p role="status">可以在浏览器提示里选择是否开启；也可以取消，继续往下读。</p>}
-              {fallbackCopy && <div className="camera-message" role="status"><p>{fallbackCopy.title}</p><p>{fallbackCopy.body}</p></div>}
-              {cameraStream && <div className="camera-dock"><video ref={videoRef} autoPlay playsInline muted aria-label="本地摄像头预览" /><GestureFeedback state={gestureFeedback} /></div>}
-              <p className="keyboard-note">不用摄像头也可以按 <kbd>1</kbd>—<kbd>4</kbd> 换星空效果。键盘空格仍然可以正常向下翻页。</p>
+              <p className="keyboard-note">键盘 <kbd>1</kbd>—<kbd>4</kbd> 同样只切换星空效果，空格仍然可以正常向下翻页。</p>
             </div>
           </div>
         </section>

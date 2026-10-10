@@ -52,6 +52,16 @@ describe('连续阅读的生日礼物', () => {
     expect(page).toContain('看看完整照片')
   })
 
+  it('摄像头入口默认可见，说明打开页面时会询问一次', () => {
+    const page = renderToStaticMarkup(<App />)
+    const cameraButton = page.indexOf('开启摄像头')
+    const helpPanel = page.indexOf('id="gift-help"')
+    expect(cameraButton).toBeGreaterThan(-1)
+    expect(cameraButton).toBeLessThan(helpPanel)
+    expect(page).toContain('打开页面时会问一次摄像头')
+    expect(page).toContain('不会上传，也不会保存')
+  })
+
   it('首页文案只保留全名大标题，右侧照片继续展示', () => {
     const hero = sectionMarkup(renderToStaticMarkup(<App />), 'hero')
     for (const line of giftCopy.hero.title) expect(hero).toContain(line)

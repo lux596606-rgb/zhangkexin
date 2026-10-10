@@ -2,7 +2,7 @@
  * 摄像头不可用时的继续方式。
  *
  * 只做一件事：在「摄像头用不了」的时候告诉使用者**现在该怎么继续**，
- * 提示使用者继续往下阅读，或在「怎么玩」中选择星空的其他玩法。
+ * 提示使用者继续往下阅读，或用星空下的按钮换个动画。
  * 摄像头状态机本身仍然由 App 掌握，这里只消费状态、给出下一步。
  */
 
@@ -51,13 +51,13 @@ const FALLBACKS: Record<DegradedCameraStatus, CameraFallbackCopy> = {
   denied: {
     status: 'denied',
     title: '不开摄像头也能看',
-    body: '祝福都在这一页。想再试一次，在「怎么玩」里点「试试手势」。',
+    body: '祝福都在这一页，往下读就好。想用手势，点上面的按钮随时能开。',
     steps: CONTINUE_STEPS,
   },
   unavailable: {
     status: 'unavailable',
     title: '暂时没有找到摄像头',
-    body: '可以直接往下读。连接摄像头后，在「怎么玩」里点「试试手势」。',
+    body: '可以直接往下读。接上摄像头以后，点上面的按钮就能用手势。',
     steps: CONTINUE_STEPS,
   },
   unsupported: {
@@ -69,13 +69,13 @@ const FALLBACKS: Record<DegradedCameraStatus, CameraFallbackCopy> = {
   error: {
     status: 'error',
     title: '摄像头暂时没能打开',
-    body: '直接往下读就好；想再试一次，在「怎么玩」里点「试试手势」。',
+    body: '直接往下读就好；想再试一次，点上面的按钮。',
     steps: CONTINUE_STEPS,
   },
   closed: {
     status: 'closed',
     title: '摄像头已关闭',
-    body: '祝福还在这里。想再用手势，在「怎么玩」里点「试试手势」。',
+    body: '祝福还在这里，想再用手势，点上面的按钮就行。',
     steps: CONTINUE_STEPS,
   },
 }

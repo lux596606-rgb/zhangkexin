@@ -54,7 +54,7 @@ function copyFor(state: GestureFeedbackState): FeedbackCopy {
         status: state.status,
         label: '手势未启动',
         mode: null,
-        hint: '想用手势时，点「试试手势」；祝福往下滚动就能读完',
+        hint: '想用手势时，点「开启摄像头」；祝福往下滚动就能读完',
         showProgress: false,
         showConfidence: false,
       }
